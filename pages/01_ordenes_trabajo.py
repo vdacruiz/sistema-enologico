@@ -20,6 +20,7 @@ def load_reference_data():
         "workers": queries.get_workers(),
         "processes": queries.get_processes(),
         "tanks": queries.get_tanks(),
+        "wines": queries.get_wines(),
     }
 
 try:
@@ -34,6 +35,11 @@ def get_tank_code(tank_id):
         return "-"
     tank = next((t for t in ref["tanks"] if t["id"] == tank_id), None)
     return tank["code"] if tank else str(tank_id)
+
+
+def get_wine_code(ot):
+    wine = ot.get("wines") or {}
+    return wine.get("code", "-") if isinstance(wine, dict) else "-"
 
 
 def build_ot_pdf(ot, lines=None):
@@ -87,6 +93,7 @@ with tab_kanban:
             border_color = "#dc3545" if priority == "Urgente" else "#dee2e6"
             bg = colors.get(status, "#f8f9fa")
 
+            wine_code = get_wine_code(ot)
             cepa = ot.get("grape_varieties", {})
             cepa_code = cepa.get("code", "-") if cepa else "-"
             worker = ot.get("workers", {})
@@ -105,8 +112,8 @@ with tab_kanban:
                 </div>
                 <div style="font-size:0.85em;color:#555;margin-top:4px;">
                     <div>{ot.get('date', '-')}</div>
-                    <div>Cepa: {cepa_code} | {process_name}</div>
-                    <div>Operario: {worker_name}</div>
+                    <div>Vino: {wine_code} | Cepa: {cepa_code}</div>
+                    <div>{process_name} | {worker_name}</div>
                     <div>Litros: {ot.get('liters', '-') or '-'}</div>
                 </div>
             </div>
@@ -143,13 +150,18 @@ with tab_kanban:
     if all_ots:
         st.markdown("---")
         st.subheader("Detalle de OT")
-        ot_options = {ot["id"]: f"OT #{ot.get('ot_number', '?')} - {ot.get('date', '')} - {ot.get('status', '')} [{ot.get('ot_type', 'Insumos')}]"
+        ot_options = {ot["id"]: f"OT #{ot.get('ot_number', '?')} - {get_wine_code(ot)} - {ot.get('status', '')} [{ot.get('ot_type', 'Insumos')}]"
                       for ot in all_ots}
         selected_ot_id = st.selectbox("Seleccione OT:", options=list(ot_options.keys()),
                                       format_func=lambda x: ot_options[x], index=None)
         if selected_ot_id:
             selected_ot = next(ot for ot in all_ots if ot["id"] == selected_ot_id)
             ot_lines = []
+
+            wine_code = get_wine_code(selected_ot)
+            cepa = (selected_ot.get("grape_varieties") or {}).get("code", "-")
+            process = (selected_ot.get("winemaking_processes") or {}).get("name", "-")
+            st.markdown(f"**Vino:** {wine_code} | **Cepa:** {cepa} | **Operacion:** {process}")
 
             if selected_ot.get("ot_type") == "Movimiento":
                 st.info(f"Movimiento de Vino: {get_tank_code(selected_ot.get('source_tank_id'))} → {get_tank_code(selected_ot.get('dest_tank_id'))} | {selected_ot.get('liters', '-')} L")
@@ -164,8 +176,6 @@ with tab_kanban:
                         if "planned_quantity" in df_lines.columns:
                             display_cols["planned_quantity"] = "Planificado"
                         display_cols["quantity"] = "Real"
-                        if "observations" in df_lines.columns:
-                            display_cols["observations"] = "Observaciones"
                         st.dataframe(
                             df_lines[list(display_cols.keys())].rename(columns=display_cols),
                             use_container_width=True, hide_index=True,
@@ -175,7 +185,6 @@ with tab_kanban:
                 except Exception as e:
                     st.warning(f"Error cargando detalle: {e}")
 
-            # PDF y acciones
             col_pdf, col_anular = st.columns(2)
             with col_pdf:
                 try:
@@ -205,7 +214,6 @@ with tab_kanban:
 # TAB 2: CREAR NUEVA OT
 # =================================================================
 with tab_crear:
-    # PDF de OT recien creada
     if "last_created_ot" in st.session_state:
         _ot_id = st.session_state.last_created_ot
         try:
@@ -247,15 +255,26 @@ with tab_crear:
         ot_number = st.number_input("N OT", value=next_ot, min_value=1, step=1)
 
     with col2:
-        grape_options = {g["id"]: f"{g['code']} - {g['name']}" for g in ref["grape_varieties"]}
-        grape_id = st.selectbox("Cepa", options=list(grape_options.keys()),
-                                format_func=lambda x: grape_options[x],
-                                index=None, placeholder="Seleccione cepa...", key="new_grape")
+        wine_options = {}
+        for w in ref["wines"]:
+            cepa = w.get("grape_varieties") or {}
+            linea = w.get("product_lines") or {}
+            wine_options[w["id"]] = f"{w['code']} - {cepa.get('code', '')} {linea.get('name', '')}"
 
-        line_options = {l["id"]: l["name"] for l in ref["product_lines"]}
-        line_id = st.selectbox("Linea de Producto", options=list(line_options.keys()),
-                               format_func=lambda x: line_options[x],
-                               index=None, placeholder="Seleccione linea...", key="new_line")
+        wine_id = st.selectbox("Codigo Vino", options=list(wine_options.keys()),
+                               format_func=lambda x: wine_options[x],
+                               index=None, placeholder="Seleccione vino...", key="new_wine")
+
+        grape_id = None
+        line_id = None
+        if wine_id:
+            selected_wine = next(w for w in ref["wines"] if w["id"] == wine_id)
+            cepa_info = selected_wine.get("grape_varieties") or {}
+            linea_info = selected_wine.get("product_lines") or {}
+            grape_id = selected_wine.get("grape_variety_id")
+            line_id = selected_wine.get("product_line_id")
+            st.markdown(f"**Cepa:** {cepa_info.get('code', '-')} - {cepa_info.get('name', '-')}")
+            st.markdown(f"**Linea:** {linea_info.get('name', '-')}")
 
     with col3:
         process_options = {p["id"]: p["name"] for p in ref["processes"]}
@@ -268,7 +287,6 @@ with tab_crear:
                                  format_func=lambda x: worker_options[x],
                                  index=None, placeholder="Seleccione operario...", key="new_worker")
 
-    # Cubas y prioridad
     col_t1, col_t2, col_t3, col_t4 = st.columns([2, 2, 2, 1])
     with col_t1:
         tank_options = {t["id"]: f"Cuba {t['code']}" for t in ref["tanks"]}
@@ -284,7 +302,6 @@ with tab_crear:
     with col_t4:
         priority = st.selectbox("Prioridad", ["Normal", "Urgente"], key="new_priority")
 
-    # Insumos planificados (solo para tipo Insumos)
     if ot_type == "Insumos":
         st.markdown("---")
         st.subheader("Insumos Planificados")
@@ -300,7 +317,6 @@ with tab_crear:
 
         for i, line in enumerate(st.session_state.ot_lines):
             col_s, col_q, col_del = st.columns([4, 2, 0.5])
-
             with col_s:
                 selected_supply = st.selectbox(
                     f"Insumo {i+1}", options=list(supply_options.keys()),
@@ -309,12 +325,10 @@ with tab_crear:
                     key=f"create_supply_{i}"
                 )
                 st.session_state.ot_lines[i]["supply_id"] = selected_supply
-
             with col_q:
                 qty = st.number_input(f"Cantidad planificada {i+1}", value=0.0, min_value=0.0, step=0.1,
                                       key=f"create_qty_{i}")
                 st.session_state.ot_lines[i]["quantity"] = qty
-
             with col_del:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if len(st.session_state.ot_lines) > 1:
@@ -322,17 +336,17 @@ with tab_crear:
 
         st.button("+ Agregar Insumo", on_click=add_line, key="create_add_line")
 
-    # Observaciones (para Movimiento)
     if ot_type == "Movimiento de Vino":
         st.markdown("---")
         ot_observations = st.text_area("Observaciones", key="new_ot_obs", placeholder="Notas sobre el movimiento...")
     else:
         ot_observations = None
 
-    # Guardar
     st.markdown("---")
     if st.button("Crear Orden de Trabajo", type="primary", key="create_ot_btn"):
-        if ot_type == "Insumos":
+        if not wine_id:
+            st.error("Debe seleccionar un Codigo de Vino")
+        elif ot_type == "Insumos":
             valid_lines = [l for l in st.session_state.ot_lines if l["supply_id"] and l["quantity"] > 0]
             if not worker_id:
                 st.error("Debe asignar un operario")
@@ -346,6 +360,7 @@ with tab_crear:
                         "status": "Pendiente",
                         "priority": priority,
                         "ot_type": "Insumos",
+                        "wine_id": wine_id,
                     }
                     if grape_id:
                         wo_data["grape_variety_id"] = grape_id
@@ -401,6 +416,7 @@ with tab_crear:
                         "status": "Pendiente",
                         "priority": priority,
                         "ot_type": "Movimiento",
+                        "wine_id": wine_id,
                         "source_tank_id": source_tank_id,
                         "dest_tank_id": dest_tank_id,
                         "liters": liters,
@@ -417,7 +433,6 @@ with tab_crear:
                         wo_data["observations"] = ot_observations
 
                     result = queries.create_work_order(wo_data)
-
                     st.session_state.last_created_ot = result[0]["id"]
                     st.cache_data.clear()
                     st.rerun()
@@ -433,7 +448,7 @@ with tab_buscar:
 
     col_s1, col_s2, col_s3, col_s4 = st.columns([2, 1.5, 1.5, 1])
     with col_s1:
-        search_term = st.text_input("Buscar:", placeholder="N OT, cepa, operario, operacion...",
+        search_term = st.text_input("Buscar:", placeholder="N OT, vino, cepa, operario...",
                                     key="search_ot_term")
     with col_s2:
         search_from = st.date_input("Desde:", value=date(date.today().year, 1, 1), key="search_from")
@@ -460,14 +475,15 @@ with tab_buscar:
             cepa = (ot.get("grape_varieties") or {}).get("code", "-")
             worker = (ot.get("workers") or {}).get("full_name", "-")
             process = (ot.get("winemaking_processes") or {}).get("name", "-")
+            wine_code = get_wine_code(ot)
             rows.append({
                 "id": ot["id"],
                 "N OT": ot.get("ot_number", "?"),
                 "Fecha": ot.get("date", "-"),
+                "Vino": wine_code,
+                "Cepa": cepa,
                 "Tipo": ot.get("ot_type", "Insumos"),
                 "Estado": ot.get("status", "-"),
-                "Prioridad": ot.get("priority", "-"),
-                "Cepa": cepa,
                 "Operacion": process,
                 "Operario": worker,
                 "Litros": ot.get("liters", "-") or "-",
@@ -485,7 +501,7 @@ with tab_buscar:
             return colors.get(val, "")
 
         st.dataframe(
-            df[["N OT", "Fecha", "Tipo", "Estado", "Prioridad", "Cepa", "Operacion", "Operario", "Litros"]]
+            df[["N OT", "Fecha", "Vino", "Cepa", "Tipo", "Estado", "Operacion", "Operario", "Litros"]]
             .style.map(color_estado, subset=["Estado"]),
             use_container_width=True,
             hide_index=True,
@@ -493,9 +509,8 @@ with tab_buscar:
         )
         st.caption(f"{len(results)} resultados")
 
-        # Seleccionar OT para ver detalle o eliminar
         st.markdown("---")
-        ot_select_opts = {ot["id"]: f"OT #{ot.get('ot_number', '?')} - {ot.get('date', '')} [{ot.get('ot_type', 'Insumos')}] ({ot.get('status', '')})"
+        ot_select_opts = {ot["id"]: f"OT #{ot.get('ot_number', '?')} - {get_wine_code(ot)} [{ot.get('ot_type', 'Insumos')}] ({ot.get('status', '')})"
                          for ot in results}
         selected_id = st.selectbox("Seleccione OT para ver detalle o eliminar:",
                                    options=list(ot_select_opts.keys()),
@@ -505,15 +520,16 @@ with tab_buscar:
         if selected_id:
             selected = next(ot for ot in results if ot["id"] == selected_id)
 
-            # Detalle
             col_det1, col_det2 = st.columns(2)
             with col_det1:
                 st.markdown(f"""
-                **OT #{selected.get('ot_number')}** | Tipo: **{selected.get('ot_type', 'Insumos')}** | Estado: **{selected.get('status')}** | Prioridad: **{selected.get('priority')}**
+                **OT #{selected.get('ot_number')}** | Tipo: **{selected.get('ot_type', 'Insumos')}** | Estado: **{selected.get('status')}**
+
+                Vino: **{get_wine_code(selected)}** | Cepa: {(selected.get('grape_varieties') or {}).get('code', '-')}
 
                 Fecha: {selected.get('date')} | Litros: {selected.get('liters', '-') or '-'}
 
-                Cuba Inicial: {get_tank_code(selected.get('source_tank_id'))} | Cuba Destino: {get_tank_code(selected.get('dest_tank_id'))}
+                Cuba: {get_tank_code(selected.get('source_tank_id'))} → {get_tank_code(selected.get('dest_tank_id'))}
 
                 Observaciones: {selected.get('observations', '-') or '-'}
                 """)
@@ -537,7 +553,6 @@ with tab_buscar:
                 except Exception:
                     st.caption("Error cargando insumos")
 
-            # PDF download
             try:
                 pdf_bytes = build_ot_pdf(selected, search_ot_lines)
                 st.download_button(
@@ -550,7 +565,6 @@ with tab_buscar:
             except Exception as e:
                 st.warning(f"Error generando PDF: {e}")
 
-            # Acciones
             st.markdown("---")
             status = selected.get("status", "")
 
@@ -575,7 +589,7 @@ with tab_buscar:
                         st.session_state[f"confirm_delete_ot_{selected_id}"] = True
 
                     if st.session_state.get(f"confirm_delete_ot_{selected_id}"):
-                        st.warning(f"Confirma eliminar OT #{selected.get('ot_number')}? Esta accion no se puede deshacer.")
+                        st.warning(f"Confirma eliminar OT #{selected.get('ot_number')}?")
                         col_yes, col_no = st.columns(2)
                         with col_yes:
                             if st.button("Si, eliminar", key=f"yes_del_ot_{selected_id}",

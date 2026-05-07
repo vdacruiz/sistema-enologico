@@ -77,7 +77,7 @@ def create_work_order_lines(lines: list):
 
 def get_work_order_by_id(work_order_id: int):
     return (get_supabase_client().table("work_orders")
-            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code)")
             .eq("id", work_order_id)
             .single()
             .execute().data)
@@ -85,7 +85,7 @@ def get_work_order_by_id(work_order_id: int):
 
 def get_work_orders(limit=50):
     return (get_supabase_client().table("work_orders")
-            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code)")
             .order("date", desc=True)
             .limit(limit)
             .execute().data)
@@ -111,7 +111,7 @@ def get_next_ot_number():
 
 def get_work_orders_with_status(from_date: str):
     return (get_supabase_client().table("work_orders")
-            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code)")
             .gte("date", from_date)
             .order("date", desc=True)
             .execute().data)
@@ -119,7 +119,7 @@ def get_work_orders_with_status(from_date: str):
 
 def get_work_orders_by_worker(worker_id: int):
     return (get_supabase_client().table("work_orders")
-            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code)")
             .eq("worker_id", worker_id)
             .order("date", desc=True)
             .limit(50)
@@ -150,7 +150,7 @@ def delete_work_order(work_order_id: int):
 
 def search_work_orders(search_term: str = None, from_date: str = None, to_date: str = None, status: str = None):
     q = (get_supabase_client().table("work_orders")
-         .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+         .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code)")
          .order("date", desc=True)
          .limit(100))
     if from_date:
@@ -166,7 +166,8 @@ def search_work_orders(search_term: str = None, from_date: str = None, to_date: 
                    search_lower in str(r.get("ot_number", "")).lower() or
                    search_lower in str((r.get("grape_varieties") or {}).get("code", "")).lower() or
                    search_lower in str((r.get("workers") or {}).get("full_name", "")).lower() or
-                   search_lower in str((r.get("winemaking_processes") or {}).get("name", "")).lower()]
+                   search_lower in str((r.get("winemaking_processes") or {}).get("name", "")).lower() or
+                   search_lower in str((r.get("wines") or {}).get("code", "")).lower()]
     return results
 
 
@@ -326,7 +327,8 @@ def get_lab_history_for_tank(tank_id: int, parameter_code: str = None):
 
 def get_wines():
     return (get_supabase_client().table("wines")
-            .select("*").eq("is_active", True).order("code").execute().data)
+            .select("*, grape_varieties(id, code, name), product_lines(id, name)")
+            .eq("is_active", True).order("code").execute().data)
 
 
 # ============================================================
@@ -397,7 +399,7 @@ def get_purchase_orders_unified(purchase_type: str = None, status: str = None, l
 
 def get_purchase_order_by_id(po_id: int):
     return (get_supabase_client().table("purchase_orders")
-            .select("*, suppliers(name), grape_varieties(code, name), product_lines(name)")
+            .select("*, suppliers(name, rut, contact_name, phone, email), grape_varieties(code, name), product_lines(name)")
             .eq("id", po_id)
             .single()
             .execute().data)

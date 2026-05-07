@@ -87,6 +87,8 @@ class OTPdf(FPDF):
         source_tank = ot_data.get("source_tank_code") or str(ot_data.get("source_tank_id", "-") or "-")
         dest_tank = ot_data.get("dest_tank_code") or str(ot_data.get("dest_tank_id", "-") or "-")
         liters = ot_data.get("liters", "-") or "-"
+        wine = ot_data.get("wines") or {}
+        wine_code = wine.get("code", "") if isinstance(wine, dict) else ""
 
         self.set_font("Helvetica", "", 8)
         row_h = 7
@@ -95,7 +97,7 @@ class OTPdf(FPDF):
             str(source_tank),
             cepa_code,
             process_name,
-            "",
+            wine_code,
             ot_data.get("observations", "") or "",
             str(dest_tank),
             str(liters),
