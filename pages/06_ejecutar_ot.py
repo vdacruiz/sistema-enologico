@@ -2,12 +2,16 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from lib import queries
+from lib.auth import get_current_user, has_permission
 from lib.stock_engine import get_lots_with_stock, check_availability
 
 st.title("Ejecutar Orden de Trabajo")
-st.markdown("Vista del operario para ejecutar OTs asignadas")
 
-# --- Seleccion de operario ---
+user = get_current_user()
+worker_id = user.get("worker_id") if user else None
+is_supervisor = has_permission("ordenes_trabajo", "crear")
+
+# --- Determinar operario ---
 @st.cache_data(ttl=120)
 def load_workers():
     return queries.get_workers()
@@ -20,42 +24,34 @@ except Exception as e:
 
 worker_options = {w["id"]: w["full_name"] for w in workers}
 
-if "operator_id" not in st.session_state:
-    st.session_state.operator_id = None
-
-# Login del operario (simple)
-if not st.session_state.operator_id:
-    st.markdown("### Identificacion del Operario")
-    selected_worker = st.selectbox(
-        "Seleccione su nombre:",
+if worker_id:
+    # Operario logueado: ve solo sus OTs
+    selected_worker_id = worker_id
+    operator_name = worker_options.get(worker_id, user.get("full_name", "?"))
+    st.markdown(f"**Operario:** {operator_name}")
+elif is_supervisor:
+    # Enologo/Admin: puede ver OTs de cualquier operario
+    st.markdown("**Vista supervisor** - Seleccione operario para ver sus OTs")
+    selected_worker_id = st.selectbox(
+        "Operario:",
         options=list(worker_options.keys()),
         format_func=lambda x: worker_options[x],
         index=None,
         placeholder="Seleccione operario..."
     )
-    if st.button("Ingresar", type="primary"):
-        if selected_worker:
-            st.session_state.operator_id = selected_worker
-            st.rerun()
-        else:
-            st.warning("Seleccione su nombre")
+    if not selected_worker_id:
+        st.info("Seleccione un operario para ver sus OTs asignadas")
+        st.stop()
+    operator_name = worker_options.get(selected_worker_id, "?")
+else:
+    st.warning("Su usuario no esta vinculado a un operario. Contacte al administrador.")
     st.stop()
-
-# Header del operario
-operator_name = worker_options.get(st.session_state.operator_id, "?")
-col_h1, col_h2 = st.columns([4, 1])
-with col_h1:
-    st.markdown(f"**Operario:** {operator_name}")
-with col_h2:
-    if st.button("Cambiar operario"):
-        st.session_state.operator_id = None
-        st.rerun()
 
 st.markdown("---")
 
 # --- Cargar OTs asignadas ---
 try:
-    my_ots = queries.get_work_orders_by_worker(st.session_state.operator_id)
+    my_ots = queries.get_work_orders_by_worker(selected_worker_id)
 except Exception as e:
     st.error(f"Error: {e}")
     my_ots = []
@@ -75,14 +71,30 @@ col_m3.metric("Completadas hoy", len([ot for ot in completadas
 if en_proceso:
     st.subheader("En Proceso")
     for ot in en_proceso:
-        render_execution_card(ot, "en_proceso")
+        ot_num = ot.get("ot_number", "?")
+        cepa = ot.get("grape_varieties", {})
+        cepa_code = cepa.get("code", "-") if cepa else "-"
+        process = ot.get("winemaking_processes", {})
+        process_name = process.get("name", "-") if process else "-"
+
+        st.markdown(f"""
+        <div style="background:#fff;border-radius:8px;padding:15px;margin-bottom:10px;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.1);border-left:4px solid #007bff;">
+            <div style="display:flex;justify-content:space-between;">
+                <strong style="font-size:1.1em;">OT #{ot_num} - EN PROCESO</strong>
+                <span style="color:#666;">{ot.get('date', '-')}</span>
+            </div>
+            <div style="margin-top:8px;color:#555;">
+                Cepa: {cepa_code} | Operacion: {process_name} | Litros: {ot.get('liters', '-') or '-'}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # --- OTs PENDIENTES ---
 st.subheader("Pendientes")
 if not pendientes:
     st.success("No tiene OTs pendientes")
 else:
-    # Ordenar urgentes primero
     pendientes.sort(key=lambda x: (0 if x.get("priority") == "Urgente" else 1, x.get("date", "")))
 
     for ot in pendientes:
@@ -109,13 +121,15 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button(f"Iniciar OT #{ot.get('ot_number', '?')}", key=f"start_{ot['id']}", type="primary"):
-                try:
-                    queries.update_work_order_status(ot["id"], "En Proceso")
-                    st.success(f"OT #{ot.get('ot_number')} iniciada")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+            can_execute = worker_id or has_permission("ejecutar_ot", "ejecutar")
+            if can_execute:
+                if st.button(f"Iniciar OT #{ot.get('ot_number', '?')}", key=f"start_{ot['id']}", type="primary"):
+                    try:
+                        queries.update_work_order_status(ot["id"], "En Proceso")
+                        st.success(f"OT #{ot.get('ot_number')} iniciada")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
 # --- EJECUTAR OT EN PROCESO ---
 if en_proceso:
@@ -131,7 +145,6 @@ if en_proceso:
 
         st.markdown(f"### OT #{ot_num} - {cepa_code} - {process_name}")
 
-        # Cargar lineas
         try:
             lines = queries.get_work_order_lines(ot["id"])
         except Exception:
@@ -195,7 +208,6 @@ if en_proceso:
                     "planned_quantity": planned,
                 })
 
-            # Observaciones
             obs = st.text_area(f"Observaciones (opcional):", key=f"exec_obs_{ot['id']}",
                               placeholder="Ej: Se ajusto dosis por alta turbidez...")
 
@@ -204,7 +216,6 @@ if en_proceso:
             with col_complete:
                 if st.button(f"Completar OT #{ot_num}", type="primary", key=f"complete_{ot['id']}",
                             use_container_width=True):
-                    # Validar stock
                     errors = []
                     for ul in updated_lines:
                         if ul["quantity"] > 0 and ul["lot_id"]:
@@ -217,7 +228,6 @@ if en_proceso:
                             st.error(err)
                     else:
                         try:
-                            # Actualizar cada linea con cantidad real y lote
                             for ul in updated_lines:
                                 update_data = {"quantity": ul["quantity"]}
                                 if ul["lot_id"]:
@@ -226,7 +236,6 @@ if en_proceso:
                                     update_data["planned_quantity"] = ul["planned_quantity"]
                                 queries.update_work_order_line(ul["line_id"], update_data)
 
-                            # Actualizar estado de la OT
                             queries.update_work_order_status(ot["id"], "Completada", obs)
                             st.success(f"OT #{ot_num} completada. Stock actualizado.")
                             st.cache_data.clear()
@@ -251,8 +260,3 @@ if completadas:
     with st.expander(f"Historial completadas ({len(completadas)})"):
         for ot in completadas[:10]:
             st.markdown(f"- **OT #{ot.get('ot_number')}** - {ot.get('date')} - Completada: {ot.get('completed_at', '-')[:10] if ot.get('completed_at') else '-'}")
-
-
-def render_execution_card(ot, prefix):
-    """Helper para renderizar cards - definida para evitar error"""
-    pass

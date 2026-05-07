@@ -24,6 +24,7 @@ def login(username: str, password: str):
             "role_id": role["id"],
             "role_name": role["name"],
             "permissions": role.get("permissions", {}),
+            "worker_id": user.get("worker_id"),
         }
     return None
 

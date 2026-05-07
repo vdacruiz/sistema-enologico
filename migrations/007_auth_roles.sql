@@ -80,4 +80,4 @@ INSERT INTO app_roles (name, description, permissions) VALUES
 -- ============================================================
 
 INSERT INTO app_users (username, password, full_name, role_id)
-VALUES ('admin', 'vda2024', 'Cristian Ruiz', (SELECT id FROM app_roles WHERE name = 'Administrador'));
+VALUES ('admin', 'vda2024', 'Carlos Ruiz', (SELECT id FROM app_roles WHERE name = 'Administrador'));

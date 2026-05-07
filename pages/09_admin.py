@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 import json
-from lib import auth
+from lib import auth, queries
 
 st.title("Administracion de Usuarios")
 
 auth.require_permission("admin", "ver")
 
 MODULES = {
+    "dashboard": "Centro de Control",
     "ordenes_trabajo": "Ordenes de Trabajo",
     "ejecutar_ot": "Ejecutar OT",
     "recepcion_insumos": "Recepcion Insumos",
@@ -32,19 +33,28 @@ with tab_users:
     try:
         users = auth.get_all_users()
         roles = auth.get_active_roles()
+        workers = queries.get_workers()
     except Exception as e:
         st.error(f"Error: {e}")
         st.stop()
+
+    worker_options = {None: "-- Sin vincular --"}
+    worker_options.update({w["id"]: w["full_name"] for w in workers})
 
     if users:
         rows = []
         for u in users:
             role = u.get("app_roles", {})
+            worker_name = "-"
+            if u.get("worker_id"):
+                w = next((w for w in workers if w["id"] == u["worker_id"]), None)
+                worker_name = w["full_name"] if w else "-"
             rows.append({
                 "ID": u["id"],
                 "Usuario": u["username"],
                 "Nombre": u["full_name"],
                 "Rol": role.get("name", "-") if role else "-",
+                "Operario": worker_name,
                 "Activo": "Si" if u.get("is_active") else "No",
                 "Ultimo Login": str(u.get("last_login") or "-")[:16],
             })
@@ -65,6 +75,13 @@ with tab_users:
         new_role = st.selectbox("Rol", options=list(role_options.keys()),
                                 format_func=lambda x: role_options[x], key="new_role")
 
+    new_worker = st.selectbox(
+        "Vincular a operario (solo para rol Operario)",
+        options=list(worker_options.keys()),
+        format_func=lambda x: worker_options[x],
+        key="new_worker"
+    )
+
     if st.button("Crear Usuario", type="primary"):
         if not new_username or not new_password or not new_fullname:
             st.error("Todos los campos son obligatorios")
@@ -72,7 +89,9 @@ with tab_users:
             st.error("La clave debe tener al menos 4 caracteres")
         else:
             try:
-                auth.create_user(new_username, new_password, new_fullname, new_role)
+                result = auth.create_user(new_username, new_password, new_fullname, new_role)
+                if new_worker and result:
+                    auth.update_user(result[0]["id"], {"worker_id": new_worker})
                 st.success(f"Usuario '{new_username}' creado exitosamente")
                 st.rerun()
             except Exception as e:
@@ -107,6 +126,17 @@ with tab_users:
                                          index=current_role_idx, key="edit_role")
                 edit_active = st.checkbox("Activo", value=user_data.get("is_active", True), key="edit_active")
 
+            current_worker = user_data.get("worker_id")
+            worker_keys = list(worker_options.keys())
+            current_worker_idx = worker_keys.index(current_worker) if current_worker in worker_keys else 0
+            edit_worker = st.selectbox(
+                "Vincular a operario",
+                options=worker_keys,
+                format_func=lambda x: worker_options[x],
+                index=current_worker_idx,
+                key="edit_worker"
+            )
+
             col_save, col_del = st.columns(2)
             with col_save:
                 if st.button("Guardar Cambios", key="save_user", use_container_width=True):
@@ -114,6 +144,7 @@ with tab_users:
                         "full_name": edit_fullname,
                         "role_id": edit_role,
                         "is_active": edit_active,
+                        "worker_id": edit_worker,
                     }
                     if edit_password:
                         update_data["password"] = edit_password
