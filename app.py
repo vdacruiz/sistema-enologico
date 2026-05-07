@@ -152,7 +152,8 @@ if has_permission("ejecutar_ot", "ver"):
 if has_permission("recepcion_insumos", "ver"):
     op_pages.append(st.Page("pages/02_recepcion_insumos.py", title="Recepcion de Insumos", icon="📦"))
 if has_permission("recepcion_vino", "ver"):
-    op_pages.append(st.Page("pages/07_recepcion_vino.py", title="Recepcion de Vino", icon="🍷"))
+    op_pages.append(st.Page("pages/10_compras_vino.py", title="Compras de Vino", icon="🍷"))
+    op_pages.append(st.Page("pages/07_recepcion_vino.py", title="Recepcion Vendimia", icon="🍇"))
 if op_pages:
     pages["Operaciones"] = op_pages
 

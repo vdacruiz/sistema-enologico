@@ -319,3 +319,53 @@ def get_lab_history_for_tank(tank_id: int, parameter_code: str = None):
 def get_wines():
     return (get_supabase_client().table("wines")
             .select("*").eq("is_active", True).order("code").execute().data)
+
+
+# ============================================================
+# COMPRAS DE VINO
+# ============================================================
+
+def create_wine_purchase(data: dict):
+    return get_supabase_client().table("wine_purchases").insert(data).execute().data
+
+
+def get_wine_purchases(limit=50):
+    return (get_supabase_client().table("wine_purchases")
+            .select("*, suppliers(name), grape_varieties(code, name), product_lines(name)")
+            .order("date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
+def get_wine_purchase_by_id(purchase_id: int):
+    return (get_supabase_client().table("wine_purchases")
+            .select("*, suppliers(name), grape_varieties(code, name), product_lines(name)")
+            .eq("id", purchase_id)
+            .single()
+            .execute().data)
+
+
+def update_wine_purchase(purchase_id: int, data: dict):
+    return (get_supabase_client().table("wine_purchases")
+            .update(data).eq("id", purchase_id).execute().data)
+
+
+def create_wine_delivery(data: dict):
+    return get_supabase_client().table("wine_purchase_deliveries").insert(data).execute().data
+
+
+def get_wine_deliveries(purchase_id: int):
+    return (get_supabase_client().table("wine_purchase_deliveries")
+            .select("*, tanks(code, name)")
+            .eq("wine_purchase_id", purchase_id)
+            .order("date")
+            .execute().data)
+
+
+def get_wine_purchases_by_status(status: str):
+    q = (get_supabase_client().table("wine_purchases")
+         .select("*, suppliers(name), grape_varieties(code, name)")
+         .order("date", desc=True))
+    if status and status != "Todos":
+        q = q.eq("status", status)
+    return q.execute().data
