@@ -101,6 +101,40 @@ def get_next_ot_number():
     return 1
 
 
+def get_work_orders_with_status(from_date: str):
+    return (get_supabase_client().table("work_orders")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .gte("date", from_date)
+            .order("date", desc=True)
+            .execute().data)
+
+
+def get_work_orders_by_worker(worker_id: int):
+    return (get_supabase_client().table("work_orders")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .eq("worker_id", worker_id)
+            .order("date", desc=True)
+            .limit(50)
+            .execute().data)
+
+
+def update_work_order_status(work_order_id: int, status: str, observations: str = None):
+    data = {"status": status}
+    if status == "En Proceso":
+        data["started_at"] = "now()"
+    elif status == "Completada":
+        data["completed_at"] = "now()"
+    if observations:
+        data["observations"] = observations
+    return (get_supabase_client().table("work_orders")
+            .update(data).eq("id", work_order_id).execute().data)
+
+
+def update_work_order_line(line_id: int, data: dict):
+    return (get_supabase_client().table("work_order_lines")
+            .update(data).eq("id", line_id).execute().data)
+
+
 # ============================================================
 # ORDENES DE COMPRA
 # ============================================================

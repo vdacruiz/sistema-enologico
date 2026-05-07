@@ -127,6 +127,7 @@ pg = st.navigation(
     {
         "Operaciones": [
             st.Page("pages/01_ordenes_trabajo.py", title="Ordenes de Trabajo", icon="📋"),
+            st.Page("pages/06_ejecutar_ot.py", title="Ejecutar OT (Operario)", icon="🔧"),
             st.Page("pages/02_recepcion_insumos.py", title="Recepcion de Insumos", icon="📦"),
         ],
         "Inventario": [
