@@ -385,9 +385,9 @@ class OCPdf(FPDF):
 
 def generate_ot_pdf(ot_data, lines, worker_name, creator_name, logo_path=None):
     pdf = OTPdf(logo_path=logo_path)
-    return pdf.build(ot_data, lines, worker_name, creator_name)
+    return bytes(pdf.build(ot_data, lines, worker_name, creator_name))
 
 
 def generate_oc_pdf(oc_data, lines=None, supplier_data=None, logo_path=None):
     pdf = OCPdf(logo_path=logo_path)
-    return pdf.build(oc_data, lines or [], supplier_data)
+    return bytes(pdf.build(oc_data, lines or [], supplier_data))
