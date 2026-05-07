@@ -1,0 +1,163 @@
+import pandas as pd
+from lib.database import get_supabase_client
+
+
+# ============================================================
+# INSUMOS
+# ============================================================
+
+def get_supplies(active_only=True):
+    q = get_supabase_client().table("supplies").select("*").order("name")
+    if active_only:
+        q = q.eq("is_active", True)
+    return q.execute().data
+
+
+def get_supply_by_id(supply_id: int):
+    return get_supabase_client().table("supplies").select("*").eq("id", supply_id).single().execute().data
+
+
+# ============================================================
+# LOTES
+# ============================================================
+
+def get_lots_by_supply(supply_id: int):
+    return (get_supabase_client().table("supply_lots")
+            .select("*")
+            .eq("supply_id", supply_id)
+            .eq("is_active", True)
+            .order("expiry_date")
+            .execute().data)
+
+
+def create_lot(supply_id: int, lot_number: str, expiry_date=None, initial_stock=0):
+    data = {
+        "supply_id": supply_id,
+        "lot_number": lot_number,
+        "initial_stock": initial_stock,
+    }
+    if expiry_date:
+        data["expiry_date"] = str(expiry_date)
+    return get_supabase_client().table("supply_lots").insert(data).execute().data
+
+
+# ============================================================
+# STOCK (vistas)
+# ============================================================
+
+def get_stock_by_lot():
+    return get_supabase_client().table("v_supply_stock_by_lot").select("*").execute().data
+
+
+def get_stock_total():
+    return get_supabase_client().table("v_supply_stock_total").select("*").execute().data
+
+
+def get_low_stock_alerts():
+    return get_supabase_client().table("v_low_stock_alerts").select("*").execute().data
+
+
+def get_expiry_alerts():
+    return get_supabase_client().table("v_expiry_alerts").select("*").execute().data
+
+
+# ============================================================
+# ORDENES DE TRABAJO
+# ============================================================
+
+def create_work_order(data: dict):
+    return get_supabase_client().table("work_orders").insert(data).execute().data
+
+
+def create_work_order_lines(lines: list):
+    if lines:
+        return get_supabase_client().table("work_order_lines").insert(lines).execute().data
+    return []
+
+
+def get_work_orders(limit=50):
+    return (get_supabase_client().table("work_orders")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .order("date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
+def get_work_order_lines(work_order_id: int):
+    return (get_supabase_client().table("work_order_lines")
+            .select("*, supplies(name, code, unit)")
+            .eq("work_order_id", work_order_id)
+            .execute().data)
+
+
+def get_next_ot_number():
+    result = (get_supabase_client().table("work_orders")
+              .select("ot_number")
+              .order("ot_number", desc=True)
+              .limit(1)
+              .execute().data)
+    if result:
+        return result[0]["ot_number"] + 1
+    return 1
+
+
+# ============================================================
+# ORDENES DE COMPRA
+# ============================================================
+
+def create_purchase_order(data: dict):
+    return get_supabase_client().table("purchase_orders").insert(data).execute().data
+
+
+def create_purchase_order_lines(lines: list):
+    if lines:
+        return get_supabase_client().table("purchase_order_lines").insert(lines).execute().data
+    return []
+
+
+def get_purchase_orders(limit=50):
+    return (get_supabase_client().table("purchase_orders")
+            .select("*, suppliers(name)")
+            .order("date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
+# ============================================================
+# DATOS DE REFERENCIA
+# ============================================================
+
+def get_grape_varieties():
+    return (get_supabase_client().table("grape_varieties")
+            .select("*").eq("is_active", True).order("code").execute().data)
+
+
+def get_product_lines():
+    return (get_supabase_client().table("product_lines")
+            .select("*").eq("is_active", True).order("sort_order").execute().data)
+
+
+def get_workers():
+    return (get_supabase_client().table("workers")
+            .select("*").eq("is_active", True).order("full_name").execute().data)
+
+
+def get_suppliers():
+    return (get_supabase_client().table("suppliers")
+            .select("*").eq("is_active", True).order("name").execute().data)
+
+
+def get_processes():
+    return (get_supabase_client().table("winemaking_processes")
+            .select("*").eq("is_active", True).order("name").execute().data)
+
+
+def get_tanks():
+    return (get_supabase_client().table("tanks")
+            .select("*").eq("is_active", True).order("code").execute().data)
+
+
+def get_tank_contents():
+    return (get_supabase_client().table("tank_contents")
+            .select("*, tanks(code, name, capacity_liters), wines(code), grape_varieties(code, name)")
+            .execute().data)
