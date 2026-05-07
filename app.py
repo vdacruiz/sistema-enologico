@@ -1,4 +1,5 @@
 import streamlit as st
+from lib.auth import login, get_current_user, has_permission, logout
 
 st.set_page_config(
     page_title="Sistema Enologico VDA",
@@ -99,49 +100,85 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Login ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+if "user" not in st.session_state:
+    st.session_state.user = None
 
-if not st.session_state.authenticated:
+if not st.session_state.user:
     col_empty1, col_login, col_empty2 = st.columns([1, 1, 1])
     with col_login:
         st.image("logo_vda.png", width=200)
         st.markdown("### Sistema de Gestion Enologica")
         st.markdown("---")
-        password = st.text_input("Clave de acceso:", type="password")
+        username = st.text_input("Usuario:", placeholder="Ingrese su usuario")
+        password = st.text_input("Clave:", type="password")
         if st.button("Ingresar", type="primary", use_container_width=True):
-            if password == "vda2024":
-                st.session_state.authenticated = True
-                st.rerun()
+            if username and password:
+                user = login(username, password)
+                if user:
+                    st.session_state.user = user
+                    st.rerun()
+                else:
+                    st.error("Usuario o clave incorrectos")
             else:
-                st.error("Clave incorrecta")
+                st.warning("Ingrese usuario y clave")
     st.stop()
 
-# --- Sidebar con logo ---
+# --- Sidebar con logo e info de usuario ---
+user = get_current_user()
 with st.sidebar:
     st.image("logo_vda.png", width=160)
+    st.markdown(f"**{user['full_name']}**")
+    st.caption(f"Rol: {user['role_name']}")
+    if st.button("Cerrar Sesion", use_container_width=True):
+        logout()
+        st.rerun()
     st.markdown("---")
 
-# --- Navegacion ---
-pg = st.navigation(
-    {
-        "Operaciones": [
-            st.Page("pages/01_ordenes_trabajo.py", title="Ordenes de Trabajo", icon="📋"),
-            st.Page("pages/06_ejecutar_ot.py", title="Ejecutar OT (Operario)", icon="🔧"),
-            st.Page("pages/02_recepcion_insumos.py", title="Recepcion de Insumos", icon="📦"),
-            st.Page("pages/07_recepcion_vino.py", title="Recepcion de Vino", icon="🍷"),
-        ],
-        "Inventario": [
-            st.Page("pages/03_stock_insumos.py", title="Stock de Insumos", icon="📊"),
-            st.Page("pages/04_stock_cubas.py", title="Stock de Cubas", icon="🏗️"),
-        ],
-        "Laboratorio": [
-            st.Page("pages/08_laboratorio.py", title="Analisis de Laboratorio", icon="🔬"),
-        ],
-        "Administracion": [
-            st.Page("pages/05_configuracion.py", title="Configuracion", icon="⚙️"),
-        ],
-    }
-)
+# --- Navegacion segun permisos ---
+pages = {}
 
+# Dashboard (pagina de inicio)
+if has_permission("dashboard", "ver"):
+    pages["Inicio"] = [
+        st.Page("pages/00_dashboard.py", title="Centro de Control", icon="🏠", default=True),
+    ]
+
+# Operaciones
+op_pages = []
+if has_permission("ordenes_trabajo", "ver"):
+    op_pages.append(st.Page("pages/01_ordenes_trabajo.py", title="Ordenes de Trabajo", icon="📋"))
+if has_permission("ejecutar_ot", "ver"):
+    op_pages.append(st.Page("pages/06_ejecutar_ot.py", title="Ejecutar OT (Operario)", icon="🔧"))
+if has_permission("recepcion_insumos", "ver"):
+    op_pages.append(st.Page("pages/02_recepcion_insumos.py", title="Recepcion de Insumos", icon="📦"))
+if has_permission("recepcion_vino", "ver"):
+    op_pages.append(st.Page("pages/07_recepcion_vino.py", title="Recepcion de Vino", icon="🍷"))
+if op_pages:
+    pages["Operaciones"] = op_pages
+
+# Inventario
+inv_pages = []
+if has_permission("stock_insumos", "ver"):
+    inv_pages.append(st.Page("pages/03_stock_insumos.py", title="Stock de Insumos", icon="📊"))
+if has_permission("stock_cubas", "ver"):
+    inv_pages.append(st.Page("pages/04_stock_cubas.py", title="Stock de Cubas", icon="🏗️"))
+if inv_pages:
+    pages["Inventario"] = inv_pages
+
+# Laboratorio
+if has_permission("laboratorio", "ver"):
+    pages["Laboratorio"] = [
+        st.Page("pages/08_laboratorio.py", title="Analisis de Laboratorio", icon="🔬"),
+    ]
+
+# Administracion
+admin_pages = []
+if has_permission("configuracion", "ver"):
+    admin_pages.append(st.Page("pages/05_configuracion.py", title="Configuracion", icon="⚙️"))
+if has_permission("admin", "ver"):
+    admin_pages.append(st.Page("pages/09_admin.py", title="Usuarios y Roles", icon="🔐"))
+if admin_pages:
+    pages["Administracion"] = admin_pages
+
+pg = st.navigation(pages)
 pg.run()
