@@ -135,6 +135,33 @@ def update_work_order_line(line_id: int, data: dict):
             .update(data).eq("id", line_id).execute().data)
 
 
+def delete_work_order(work_order_id: int):
+    get_supabase_client().table("work_order_lines").delete().eq("work_order_id", work_order_id).execute()
+    return get_supabase_client().table("work_orders").delete().eq("id", work_order_id).execute().data
+
+
+def search_work_orders(search_term: str = None, from_date: str = None, to_date: str = None, status: str = None):
+    q = (get_supabase_client().table("work_orders")
+         .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+         .order("date", desc=True)
+         .limit(100))
+    if from_date:
+        q = q.gte("date", from_date)
+    if to_date:
+        q = q.lte("date", to_date)
+    if status and status != "Todos":
+        q = q.eq("status", status)
+    results = q.execute().data
+    if search_term:
+        search_lower = search_term.lower()
+        results = [r for r in results if
+                   search_lower in str(r.get("ot_number", "")).lower() or
+                   search_lower in str((r.get("grape_varieties") or {}).get("code", "")).lower() or
+                   search_lower in str((r.get("workers") or {}).get("full_name", "")).lower() or
+                   search_lower in str((r.get("winemaking_processes") or {}).get("name", "")).lower()]
+    return results
+
+
 # ============================================================
 # ORDENES DE COMPRA
 # ============================================================

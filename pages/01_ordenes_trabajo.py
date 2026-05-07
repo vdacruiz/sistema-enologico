@@ -6,7 +6,7 @@ from lib import queries
 st.title("Ordenes de Trabajo")
 st.markdown("Creacion y seguimiento de ordenes de trabajo")
 
-tab_kanban, tab_crear = st.tabs(["Tablero", "Crear Nueva OT"])
+tab_kanban, tab_crear, tab_buscar = st.tabs(["Tablero", "Crear Nueva OT", "Buscar / Eliminar"])
 
 # --- Cargar datos de referencia ---
 @st.cache_data(ttl=120)
@@ -304,3 +304,165 @@ with tab_crear:
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
+
+# =================================================================
+# TAB 3: BUSCAR / ELIMINAR
+# =================================================================
+with tab_buscar:
+    st.subheader("Buscar Ordenes de Trabajo")
+
+    col_s1, col_s2, col_s3, col_s4 = st.columns([2, 1.5, 1.5, 1])
+    with col_s1:
+        search_term = st.text_input("Buscar:", placeholder="N° OT, cepa, operario, operacion...",
+                                    key="search_ot_term")
+    with col_s2:
+        search_from = st.date_input("Desde:", value=date(date.today().year, 1, 1), key="search_from")
+    with col_s3:
+        search_to = st.date_input("Hasta:", value=date.today(), key="search_to")
+    with col_s4:
+        search_status = st.selectbox("Estado:", ["Todos", "Pendiente", "En Proceso", "Completada", "Anulada"],
+                                     key="search_status")
+
+    try:
+        results = queries.search_work_orders(
+            search_term=search_term if search_term else None,
+            from_date=str(search_from),
+            to_date=str(search_to),
+            status=search_status,
+        )
+    except Exception as e:
+        st.error(f"Error: {e}")
+        results = []
+
+    if results:
+        rows = []
+        for ot in results:
+            cepa = (ot.get("grape_varieties") or {}).get("code", "-")
+            worker = (ot.get("workers") or {}).get("full_name", "-")
+            process = (ot.get("winemaking_processes") or {}).get("name", "-")
+            rows.append({
+                "id": ot["id"],
+                "N° OT": ot.get("ot_number", "?"),
+                "Fecha": ot.get("date", "-"),
+                "Estado": ot.get("status", "-"),
+                "Prioridad": ot.get("priority", "-"),
+                "Cepa": cepa,
+                "Operacion": process,
+                "Operario": worker,
+                "Litros": ot.get("liters", "-") or "-",
+            })
+
+        df = pd.DataFrame(rows)
+
+        def color_estado(val):
+            colors = {
+                "Pendiente": "background-color: #fff3cd",
+                "En Proceso": "background-color: #cce5ff",
+                "Completada": "background-color: #d4edda",
+                "Anulada": "background-color: #f8d7da",
+            }
+            return colors.get(val, "")
+
+        st.dataframe(
+            df[["N° OT", "Fecha", "Estado", "Prioridad", "Cepa", "Operacion", "Operario", "Litros"]]
+            .style.map(color_estado, subset=["Estado"]),
+            use_container_width=True,
+            hide_index=True,
+            height=400,
+        )
+        st.caption(f"{len(results)} resultados")
+
+        # Seleccionar OT para ver detalle o eliminar
+        st.markdown("---")
+        ot_select_opts = {ot["id"]: f"OT #{ot.get('ot_number', '?')} - {ot.get('date', '')} [{ot.get('status', '')}]"
+                         for ot in results}
+        selected_id = st.selectbox("Seleccione OT para ver detalle o eliminar:",
+                                   options=list(ot_select_opts.keys()),
+                                   format_func=lambda x: ot_select_opts[x],
+                                   index=None, key="search_select_ot")
+
+        if selected_id:
+            selected = next(ot for ot in results if ot["id"] == selected_id)
+
+            # Detalle
+            col_det1, col_det2 = st.columns(2)
+            with col_det1:
+                st.markdown(f"""
+                **OT #{selected.get('ot_number')}** | Estado: **{selected.get('status')}** | Prioridad: **{selected.get('priority')}**
+
+                Fecha: {selected.get('date')} | Litros: {selected.get('liters', '-') or '-'}
+
+                Observaciones: {selected.get('observations', '-') or '-'}
+                """)
+
+            with col_det2:
+                try:
+                    lines = queries.get_work_order_lines(selected_id)
+                    if lines:
+                        for ln in lines:
+                            sup = (ln.get("supplies") or {})
+                            name = sup.get("name", "?")
+                            unit = sup.get("unit", "")
+                            planned = ln.get("planned_quantity", "-")
+                            real = ln.get("quantity", "-")
+                            st.markdown(f"- **{name}** ({unit}): planificado {planned} / real {real}")
+                    else:
+                        st.caption("Sin insumos")
+                except Exception:
+                    st.caption("Error cargando insumos")
+
+            # Acciones
+            st.markdown("---")
+            status = selected.get("status", "")
+
+            col_a1, col_a2, col_a3 = st.columns(3)
+
+            with col_a1:
+                if status == "Completada":
+                    st.info("Las OTs completadas no se pueden eliminar (ya descontaron stock)")
+                elif status == "En Proceso":
+                    st.warning("Primero devuelva la OT a Pendiente antes de eliminar")
+                    if st.button("Devolver a Pendiente", key="search_return_pending"):
+                        try:
+                            queries.update_work_order_status(selected_id, "Pendiente")
+                            st.success("OT devuelta a Pendiente")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
+            with col_a2:
+                if status in ("Pendiente", "Anulada"):
+                    if st.button("Eliminar OT", key="search_delete_ot"):
+                        st.session_state[f"confirm_delete_ot_{selected_id}"] = True
+
+                    if st.session_state.get(f"confirm_delete_ot_{selected_id}"):
+                        st.warning(f"Confirma eliminar OT #{selected.get('ot_number')}? Esta accion no se puede deshacer.")
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button("Si, eliminar", key=f"yes_del_ot_{selected_id}",
+                                        use_container_width=True):
+                                try:
+                                    queries.delete_work_order(selected_id)
+                                    st.success(f"OT #{selected.get('ot_number')} eliminada")
+                                    del st.session_state[f"confirm_delete_ot_{selected_id}"]
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                        with col_no:
+                            if st.button("Cancelar", key=f"no_del_ot_{selected_id}",
+                                        use_container_width=True):
+                                del st.session_state[f"confirm_delete_ot_{selected_id}"]
+                                st.rerun()
+
+            with col_a3:
+                if status == "Pendiente":
+                    if st.button("Anular OT", key="search_anular_ot"):
+                        try:
+                            queries.update_work_order_status(selected_id, "Anulada")
+                            st.success("OT anulada")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+    else:
+        st.info("No se encontraron ordenes de trabajo")
