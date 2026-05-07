@@ -75,6 +75,14 @@ def create_work_order_lines(lines: list):
     return []
 
 
+def get_work_order_by_id(work_order_id: int):
+    return (get_supabase_client().table("work_orders")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")
+            .eq("id", work_order_id)
+            .single()
+            .execute().data)
+
+
 def get_work_orders(limit=50):
     return (get_supabase_client().table("work_orders")
             .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name)")

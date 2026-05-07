@@ -116,6 +116,33 @@ with tab_lista:
 # TAB: Nueva OC
 # =============================================================
 with tab_nueva:
+    # PDF de OC recien creada
+    if "last_created_oc" in st.session_state:
+        _oc_id = st.session_state.last_created_oc
+        try:
+            _oc_data = queries.get_purchase_order_by_id(_oc_id)
+            _oc_lines = []
+            if _oc_data.get("purchase_type") == "Insumos":
+                _oc_lines = queries.get_po_supply_lines(_oc_id)
+            _pdf = generate_oc_pdf(_oc_data, lines=_oc_lines, logo_path="logo_vda.png")
+            st.success(f"OC {_oc_data.get('oc_number') or _oc_id} creada exitosamente")
+            col_ocpdf, col_ocnew = st.columns(2)
+            with col_ocpdf:
+                st.download_button(
+                    "Descargar PDF",
+                    data=_pdf,
+                    file_name=f"OC_{_oc_data.get('oc_number') or _oc_id}.pdf",
+                    mime="application/pdf",
+                    key="new_oc_pdf",
+                )
+            with col_ocnew:
+                if st.button("Crear otra OC", key="close_oc_success"):
+                    del st.session_state["last_created_oc"]
+                    st.rerun()
+        except Exception:
+            del st.session_state["last_created_oc"]
+        st.markdown("---")
+
     can_create = has_permission("recepcion_insumos", "crear") or has_permission("recepcion_vino", "crear")
     if not can_create:
         st.warning("No tiene permisos para crear OC")
@@ -291,7 +318,7 @@ with tab_nueva:
                             } for l in valid_lines]
                             queries.create_purchase_order_lines(lines)
 
-                    st.success(f"OC creada exitosamente (ID: {po_id})")
+                    st.session_state.last_created_oc = po_id
                     st.session_state.oc_insumo_lines = [{"supply_id": None, "quantity": 0.0}]
                     st.cache_data.clear()
                     st.rerun()

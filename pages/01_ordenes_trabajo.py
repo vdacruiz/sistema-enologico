@@ -205,6 +205,31 @@ with tab_kanban:
 # TAB 2: CREAR NUEVA OT
 # =================================================================
 with tab_crear:
+    # PDF de OT recien creada
+    if "last_created_ot" in st.session_state:
+        _ot_id = st.session_state.last_created_ot
+        try:
+            _ot_data = queries.get_work_order_by_id(_ot_id)
+            _ot_lines = queries.get_work_order_lines(_ot_id)
+            _pdf = build_ot_pdf(_ot_data, _ot_lines)
+            st.success(f"OT #{_ot_data.get('ot_number', '?')} creada exitosamente")
+            col_otpdf, col_otnew = st.columns(2)
+            with col_otpdf:
+                st.download_button(
+                    "Descargar PDF",
+                    data=_pdf,
+                    file_name=f"OT_{_ot_data.get('ot_number', _ot_id)}.pdf",
+                    mime="application/pdf",
+                    key="new_ot_pdf",
+                )
+            with col_otnew:
+                if st.button("Crear otra OT", key="close_ot_success"):
+                    del st.session_state["last_created_ot"]
+                    st.rerun()
+        except Exception:
+            del st.session_state["last_created_ot"]
+        st.markdown("---")
+
     if "ot_lines" not in st.session_state:
         st.session_state.ot_lines = [{"supply_id": None, "lot_id": None, "quantity": 0.0}]
 
@@ -350,7 +375,7 @@ with tab_crear:
                         })
                     queries.create_work_order_lines(wo_lines)
 
-                    st.success(f"OT #{ot_number} (Insumos) creada como PENDIENTE")
+                    st.session_state.last_created_ot = wo_id
                     st.session_state.ot_lines = [{"supply_id": None, "lot_id": None, "quantity": 0.0}]
                     st.cache_data.clear()
                     st.rerun()
@@ -391,9 +416,9 @@ with tab_crear:
                     if ot_observations:
                         wo_data["observations"] = ot_observations
 
-                    queries.create_work_order(wo_data)
+                    result = queries.create_work_order(wo_data)
 
-                    st.success(f"OT #{ot_number} (Movimiento de Vino) creada como PENDIENTE")
+                    st.session_state.last_created_ot = result[0]["id"]
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
