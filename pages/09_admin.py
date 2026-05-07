@@ -11,6 +11,7 @@ MODULES = {
     "dashboard": "Centro de Control",
     "ordenes_trabajo": "Ordenes de Trabajo",
     "ejecutar_ot": "Ejecutar OT",
+    "aprobar_oc": "Aprobar OC",
     "recepcion_insumos": "Recepcion Insumos",
     "recepcion_vino": "Recepcion Vino",
     "stock_insumos": "Stock Insumos",
@@ -20,7 +21,7 @@ MODULES = {
     "admin": "Administracion",
 }
 
-ACTIONS = ["ver", "crear", "editar", "eliminar", "ejecutar"]
+ACTIONS = ["ver", "crear", "editar", "eliminar", "ejecutar", "aprobar_enologia", "aprobar_admin"]
 
 tab_users, tab_roles = st.tabs(["Usuarios", "Roles y Permisos"])
 

@@ -31,7 +31,7 @@ with tab_con_oc:
 
     try:
         ocs_insumos = queries.get_purchase_orders_unified(purchase_type="Insumos")
-        ocs_pendientes = [o for o in ocs_insumos if o.get("status") in ("Pedido", "Recibido Parcial")]
+        ocs_pendientes = [o for o in ocs_insumos if o.get("status") in ("Aprobada", "Pedido", "Recibido Parcial")]
     except Exception:
         ocs_pendientes = []
         ocs_insumos = []

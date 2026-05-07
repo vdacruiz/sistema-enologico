@@ -2,18 +2,22 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 from lib import queries
-from lib.auth import require_permission, has_permission
+from lib.auth import require_permission, has_permission, get_current_user
 
 require_permission("recepcion_insumos", "ver")
 
 st.title("Ordenes de Compra")
 
 PURCHASE_TYPES = ["Insumos", "Vino", "Uva"]
-STATUSES_INSUMOS = ["Pedido", "Recibido Parcial", "Recibido", "Facturado", "Cerrada"]
-STATUSES_VINO = ["Pedido", "En Despacho", "Despachado", "Facturado", "DO Recibida", "Aceptada"]
-STATUSES_UVA = ["Pedido", "En Despacho", "Despachado", "Facturado", "Cerrada"]
+STATUSES_INSUMOS = ["Borrador", "Aprobada Enologia", "Aprobada", "Pedido", "Recibido Parcial", "Recibido", "Facturado", "Cerrada"]
+STATUSES_VINO = ["Borrador", "Aprobada Enologia", "Aprobada", "Pedido", "En Despacho", "Despachado", "Facturado", "DO Recibida", "Aceptada"]
+STATUSES_UVA = ["Borrador", "Aprobada Enologia", "Aprobada", "Pedido", "En Despacho", "Despachado", "Facturado", "Cerrada"]
 
 STATUS_COLORS = {
+    "Borrador": "#adb5bd",
+    "Aprobada Enologia": "#6f42c1",
+    "Aprobada": "#20c997",
+    "Rechazada": "#dc3545",
     "Pedido": "#6c757d",
     "En Despacho": "#007bff",
     "Recibido Parcial": "#17a2b8",
@@ -41,7 +45,7 @@ except Exception as e:
     st.error(f"Error: {e}")
     st.stop()
 
-tab_lista, tab_nueva, tab_detalle = st.tabs(["Listado", "Nueva OC", "Detalle / Recepciones"])
+tab_lista, tab_nueva, tab_aprobar, tab_detalle = st.tabs(["Listado", "Nueva OC", "Aprobaciones", "Detalle / Recepciones"])
 
 # =============================================================
 # TAB: Listado
@@ -223,11 +227,16 @@ with tab_nueva:
                 st.error("Debe seleccionar un proveedor")
             else:
                 try:
+                    user = get_current_user()
+                    can_approve = has_permission("aprobar_oc", "aprobar_admin")
+                    initial_status = "Aprobada" if can_approve else "Borrador"
+
                     data = {
                         "date": str(oc_date),
                         "supplier_id": oc_supplier,
                         "purchase_type": oc_type,
-                        "status": "Pedido",
+                        "status": initial_status,
+                        "created_by": user["id"] if user else None,
                     }
                     if oc_number:
                         data["oc_number"] = oc_number
@@ -286,6 +295,132 @@ with tab_nueva:
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+# =============================================================
+# TAB: Aprobaciones
+# =============================================================
+with tab_aprobar:
+    can_approve_eno = has_permission("aprobar_oc", "aprobar_enologia")
+    can_approve_admin = has_permission("aprobar_oc", "aprobar_admin")
+
+    if not can_approve_eno and not can_approve_admin:
+        st.info("No tiene permisos de aprobacion. Las OC que cree pasaran por el flujo de aprobacion.")
+    else:
+        st.subheader("OC Pendientes de Aprobacion")
+
+        try:
+            all_for_approval = queries.get_purchase_orders_unified(limit=200)
+        except Exception:
+            all_for_approval = []
+
+        # Filtrar segun rol
+        pending_approval = []
+        for o in all_for_approval:
+            s = o.get("status", "")
+            if s == "Borrador" and can_approve_eno:
+                pending_approval.append(o)
+            elif s == "Aprobada Enologia" and can_approve_admin:
+                pending_approval.append(o)
+
+        if not pending_approval:
+            st.success("No hay OC pendientes de su aprobacion")
+        else:
+            for oc in pending_approval:
+                supplier = (oc.get("suppliers") or {}).get("name", "?")
+                cepa = oc.get("grape_varieties")
+                cepa_txt = cepa.get("code", "") if cepa else ""
+                status = oc.get("status", "?")
+                color = STATUS_COLORS.get(status, "#999")
+
+                oc_label = f"OC {oc.get('oc_number') or oc['id']}"
+                type_label = oc.get("purchase_type", "?")
+
+                st.markdown(
+                    f'<div style="background:#fff;border-radius:8px;padding:15px;margin-bottom:10px;'
+                    f'box-shadow:0 1px 3px rgba(0,0,0,0.1);border-left:4px solid {color};">'
+                    f'<div style="display:flex;justify-content:space-between;">'
+                    f'<strong>{oc_label}</strong>'
+                    f'<span style="background:{color};color:white;padding:2px 10px;border-radius:3px;'
+                    f'font-size:0.8em;">{status}</span></div>'
+                    f'<div style="margin-top:8px;color:#555;">'
+                    f'Tipo: {type_label} | Proveedor: {supplier} '
+                    f'{"| Cepa: " + cepa_txt if cepa_txt else ""} | '
+                    f'Fecha: {oc.get("date", "-")}</div>'
+                    f'<div style="margin-top:4px;color:#555;">'
+                    f'{"Litros: " + str(oc.get("expected_liters", "")) + " | " if oc.get("expected_liters") else ""}'
+                    f'{"Kilos: " + str(oc.get("expected_kilos", "")) + " | " if oc.get("expected_kilos") else ""}'
+                    f'{"Total: $" + str(oc.get("total_price", "")) + " " + str(oc.get("currency", "")) if oc.get("total_price") else ""}'
+                    f'</div>'
+                    f'{"<div style=margin-top:4px;color:#666;font-style:italic;>" + oc.get("notes", "") + "</div>" if oc.get("notes") else ""}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # Mostrar lineas si es insumos
+                if oc.get("purchase_type") == "Insumos":
+                    try:
+                        oc_lines = queries.get_po_supply_lines(oc["id"])
+                        if oc_lines:
+                            line_texts = []
+                            for l in oc_lines:
+                                supply = l.get("supplies", {})
+                                line_texts.append(f"  - {supply.get('name', '?')}: {l.get('quantity', 0)} {supply.get('unit', '')}")
+                            st.markdown("\n".join(line_texts))
+                    except Exception:
+                        pass
+
+                col_apr, col_rej = st.columns(2)
+
+                with col_apr:
+                    if status == "Borrador" and can_approve_eno:
+                        if st.button(f"Aprobar (Enologia)", key=f"apr_eno_{oc['id']}", type="primary",
+                                     use_container_width=True):
+                            user = get_current_user()
+                            queries.update_purchase_order(oc["id"], {
+                                "status": "Aprobada Enologia",
+                                "approved_by_enology": user["id"],
+                                "approved_by_enology_at": "now()",
+                            })
+                            st.success(f"{oc_label} aprobada por Enologia")
+                            st.cache_data.clear()
+                            st.rerun()
+
+                    elif status == "Aprobada Enologia" and can_approve_admin:
+                        if st.button(f"Aprobar (V°B°)", key=f"apr_admin_{oc['id']}", type="primary",
+                                     use_container_width=True):
+                            user = get_current_user()
+                            queries.update_purchase_order(oc["id"], {
+                                "status": "Aprobada",
+                                "approved_by_admin": user["id"],
+                                "approved_by_admin_at": "now()",
+                            })
+                            st.success(f"{oc_label} aprobada con V°B°")
+                            st.cache_data.clear()
+                            st.rerun()
+
+                with col_rej:
+                    if st.button(f"Rechazar", key=f"rej_{oc['id']}", use_container_width=True):
+                        st.session_state[f"reject_oc_{oc['id']}"] = True
+
+                    if st.session_state.get(f"reject_oc_{oc['id']}"):
+                        rej_notes = st.text_input("Motivo del rechazo:", key=f"rej_notes_{oc['id']}")
+                        if st.button("Confirmar Rechazo", key=f"rej_confirm_{oc['id']}"):
+                            if not rej_notes:
+                                st.error("Debe indicar el motivo")
+                            else:
+                                user = get_current_user()
+                                queries.update_purchase_order(oc["id"], {
+                                    "status": "Rechazada",
+                                    "rejected_by": user["id"],
+                                    "rejected_at": "now()",
+                                    "rejection_notes": rej_notes,
+                                })
+                                st.success(f"{oc_label} rechazada")
+                                del st.session_state[f"reject_oc_{oc['id']}"]
+                                st.cache_data.clear()
+                                st.rerun()
+
+                st.markdown("---")
 
 # =============================================================
 # TAB: Detalle / Recepciones
