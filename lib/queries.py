@@ -400,6 +400,11 @@ def update_purchase_order(po_id: int, data: dict):
             .update(data).eq("id", po_id).execute().data)
 
 
+def delete_purchase_order(po_id: int):
+    get_supabase_client().table("purchase_order_lines").delete().eq("purchase_order_id", po_id).execute()
+    return get_supabase_client().table("purchase_orders").delete().eq("id", po_id).execute().data
+
+
 def get_po_wine_deliveries(po_id: int):
     return (get_supabase_client().table("wine_purchase_deliveries")
             .select("*, tanks(code, name)")

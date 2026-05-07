@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date
 from lib import queries
 from lib.auth import require_permission, has_permission, get_current_user
+from lib.pdf_generator import generate_oc_pdf
 
 require_permission("recepcion_insumos", "ver")
 
@@ -27,6 +28,7 @@ STATUS_COLORS = {
     "DO Recibida": "#fd7e14",
     "Aceptada": "#28a745",
     "Cerrada": "#28a745",
+    "Anulada": "#6c757d",
 }
 
 @st.cache_data(ttl=300)
@@ -463,6 +465,25 @@ with tab_detalle:
                 unsafe_allow_html=True,
             )
 
+            # PDF Download
+            _oc_lines_for_pdf = []
+            if oc_type == "Insumos":
+                try:
+                    _oc_lines_for_pdf = queries.get_po_supply_lines(sel_oc_id)
+                except Exception:
+                    pass
+            try:
+                pdf_bytes = generate_oc_pdf(oc, lines=_oc_lines_for_pdf, logo_path="logo_vda.png")
+                st.download_button(
+                    "Descargar PDF OC",
+                    data=pdf_bytes,
+                    file_name=f"OC_{oc.get('oc_number') or oc['id']}.pdf",
+                    mime="application/pdf",
+                    key="oc_detail_pdf",
+                )
+            except Exception as e:
+                st.warning(f"Error generando PDF: {e}")
+
             # ---- DETALLE SEGUN TIPO ----
 
             if oc_type == "Vino":
@@ -755,3 +776,59 @@ with tab_detalle:
 
                 elif status in ("Cerrada", "Aceptada"):
                     st.success("OC cerrada")
+
+            # ---- ELIMINAR / ANULAR ----
+            if status in ("Borrador", "Rechazada"):
+                st.markdown("---")
+                if st.button("Eliminar OC", key="oc_delete", use_container_width=True):
+                    st.session_state[f"confirm_del_oc_{sel_oc_id}"] = True
+
+                if st.session_state.get(f"confirm_del_oc_{sel_oc_id}"):
+                    st.warning(f"Confirma eliminar OC {oc.get('oc_number') or sel_oc_id}? Esta accion no se puede deshacer.")
+                    col_dy, col_dn = st.columns(2)
+                    with col_dy:
+                        if st.button("Si, eliminar", key="oc_del_yes", use_container_width=True):
+                            try:
+                                queries.delete_purchase_order(sel_oc_id)
+                                st.success("OC eliminada")
+                                del st.session_state[f"confirm_del_oc_{sel_oc_id}"]
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+                    with col_dn:
+                        if st.button("Cancelar", key="oc_del_no", use_container_width=True):
+                            del st.session_state[f"confirm_del_oc_{sel_oc_id}"]
+                            st.rerun()
+
+            elif status in ("Aprobada Enologia", "Aprobada", "Pedido"):
+                st.markdown("---")
+                if st.button("Anular OC", key="oc_annul", use_container_width=True):
+                    st.session_state[f"confirm_annul_oc_{sel_oc_id}"] = True
+
+                if st.session_state.get(f"confirm_annul_oc_{sel_oc_id}"):
+                    annul_reason = st.text_input("Motivo de anulacion:", key="oc_annul_reason")
+                    col_ay, col_an = st.columns(2)
+                    with col_ay:
+                        if st.button("Confirmar Anulacion", key="oc_annul_yes", use_container_width=True):
+                            if not annul_reason:
+                                st.error("Debe indicar el motivo")
+                            else:
+                                try:
+                                    queries.update_purchase_order(sel_oc_id, {
+                                        "status": "Anulada",
+                                        "notes": f"ANULADA: {annul_reason}",
+                                    })
+                                    st.success("OC anulada")
+                                    del st.session_state[f"confirm_annul_oc_{sel_oc_id}"]
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                    with col_an:
+                        if st.button("Cancelar", key="oc_annul_no", use_container_width=True):
+                            del st.session_state[f"confirm_annul_oc_{sel_oc_id}"]
+                            st.rerun()
+
+            elif status == "Anulada":
+                st.warning("Esta OC fue anulada")

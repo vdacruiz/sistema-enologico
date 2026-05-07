@@ -25,12 +25,10 @@ except Exception as e:
 worker_options = {w["id"]: w["full_name"] for w in workers}
 
 if worker_id:
-    # Operario logueado: ve solo sus OTs
     selected_worker_id = worker_id
     operator_name = worker_options.get(worker_id, user.get("full_name", "?"))
     st.markdown(f"**Operario:** {operator_name}")
 elif is_supervisor:
-    # Enologo/Admin: puede ver OTs de cualquier operario
     st.markdown("**Vista supervisor** - Seleccione operario para ver sus OTs")
     selected_worker_id = st.selectbox(
         "Operario:",
@@ -72,17 +70,19 @@ if en_proceso:
     st.subheader("En Proceso")
     for ot in en_proceso:
         ot_num = ot.get("ot_number", "?")
+        ot_type = ot.get("ot_type", "Insumos")
         cepa = ot.get("grape_varieties", {})
         cepa_code = cepa.get("code", "-") if cepa else "-"
         process = ot.get("winemaking_processes", {})
         process_name = process.get("name", "-") if process else "-"
+        type_color = "#17a2b8" if ot_type == "Insumos" else "#28a745"
 
         st.markdown(f"""
         <div style="background:#fff;border-radius:8px;padding:15px;margin-bottom:10px;
                     box-shadow:0 1px 3px rgba(0,0,0,0.1);border-left:4px solid #007bff;">
             <div style="display:flex;justify-content:space-between;">
                 <strong style="font-size:1.1em;">OT #{ot_num} - EN PROCESO</strong>
-                <span style="color:#666;">{ot.get('date', '-')}</span>
+                <span><span style="background:{type_color};color:white;padding:2px 6px;border-radius:3px;font-size:0.75em;">{ot_type}</span> {ot.get('date', '-')}</span>
             </div>
             <div style="margin-top:8px;color:#555;">
                 Cepa: {cepa_code} | Operacion: {process_name} | Litros: {ot.get('liters', '-') or '-'}
@@ -103,6 +103,8 @@ else:
         process = ot.get("winemaking_processes", {})
         process_name = process.get("name", "-") if process else "-"
         is_urgent = ot.get("priority") == "Urgente"
+        ot_type = ot.get("ot_type", "Insumos")
+        type_color = "#17a2b8" if ot_type == "Insumos" else "#28a745"
 
         border = "border-left: 4px solid #dc3545;" if is_urgent else "border-left: 4px solid #ffc107;"
 
@@ -112,7 +114,7 @@ else:
                         box-shadow:0 1px 3px rgba(0,0,0,0.1);{border}">
                 <div style="display:flex;justify-content:space-between;">
                     <strong style="font-size:1.1em;">OT #{ot.get('ot_number', '?')}</strong>
-                    <span style="color:#666;">{ot.get('date', '-')}</span>
+                    <span><span style="background:{type_color};color:white;padding:2px 6px;border-radius:3px;font-size:0.75em;">{ot_type}</span> {ot.get('date', '-')}</span>
                 </div>
                 <div style="margin-top:8px;color:#555;">
                     Cepa: {cepa_code} | Operacion: {process_name} | Litros: {ot.get('liters', '-') or '-'}
@@ -138,6 +140,7 @@ if en_proceso:
 
     for ot in en_proceso:
         ot_num = ot.get("ot_number", "?")
+        ot_type = ot.get("ot_type", "Insumos")
         cepa = ot.get("grape_varieties", {})
         cepa_code = cepa.get("code", "-") if cepa else "-"
         process = ot.get("winemaking_processes", {})
@@ -145,15 +148,18 @@ if en_proceso:
 
         st.markdown(f"### OT #{ot_num} - {cepa_code} - {process_name}")
 
+        if ot_type == "Movimiento":
+            st.info(f"Movimiento de Vino | Litros: {ot.get('liters', '-') or '-'}")
+
         try:
             lines = queries.get_work_order_lines(ot["id"])
         except Exception:
             lines = []
 
+        updated_lines = []
         if lines:
             st.markdown("**Insumos a utilizar:**")
 
-            updated_lines = []
             for idx, line in enumerate(lines):
                 supply_name = line.get("supplies", {}).get("name", "?") if line.get("supplies") else "?"
                 supply_unit = line.get("supplies", {}).get("unit", "") if line.get("supplies") else ""
@@ -208,55 +214,53 @@ if en_proceso:
                     "planned_quantity": planned,
                 })
 
-            obs = st.text_area(f"Observaciones (opcional):", key=f"exec_obs_{ot['id']}",
-                              placeholder="Ej: Se ajusto dosis por alta turbidez...")
+        obs = st.text_area(f"Observaciones (opcional):", key=f"exec_obs_{ot['id']}",
+                          placeholder="Ej: Se ajusto dosis por alta turbidez...")
 
-            col_complete, col_cancel = st.columns(2)
+        col_complete, col_cancel = st.columns(2)
 
-            with col_complete:
-                if st.button(f"Completar OT #{ot_num}", type="primary", key=f"complete_{ot['id']}",
-                            use_container_width=True):
-                    errors = []
-                    for ul in updated_lines:
-                        if ul["quantity"] > 0 and ul["lot_id"]:
-                            ok, msg = check_availability(ul["supply_id"], ul["lot_id"], ul["quantity"])
-                            if not ok:
-                                errors.append(f"{ul['supply_id']}: {msg}")
+        with col_complete:
+            if st.button(f"Completar OT #{ot_num}", type="primary", key=f"complete_{ot['id']}",
+                        use_container_width=True):
+                errors = []
+                for ul in updated_lines:
+                    if ul["quantity"] > 0 and ul["lot_id"]:
+                        ok, msg = check_availability(ul["supply_id"], ul["lot_id"], ul["quantity"])
+                        if not ok:
+                            errors.append(f"{ul['supply_id']}: {msg}")
 
-                    if errors:
-                        for err in errors:
-                            st.error(err)
-                    else:
-                        try:
-                            for ul in updated_lines:
-                                update_data = {"quantity": ul["quantity"]}
-                                if ul["lot_id"]:
-                                    update_data["lot_id"] = ul["lot_id"]
-                                if ul["planned_quantity"]:
-                                    update_data["planned_quantity"] = ul["planned_quantity"]
-                                queries.update_work_order_line(ul["line_id"], update_data)
-
-                            queries.update_work_order_status(ot["id"], "Completada", obs)
-                            st.success(f"OT #{ot_num} completada. Stock actualizado.")
-                            st.cache_data.clear()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-
-            with col_cancel:
-                if st.button(f"Devolver a Pendiente", key=f"return_{ot['id']}",
-                            use_container_width=True):
+                if errors:
+                    for err in errors:
+                        st.error(err)
+                else:
                     try:
-                        queries.update_work_order_status(ot["id"], "Pendiente")
+                        for ul in updated_lines:
+                            update_data = {"quantity": ul["quantity"]}
+                            if ul["lot_id"]:
+                                update_data["lot_id"] = ul["lot_id"]
+                            if ul["planned_quantity"]:
+                                update_data["planned_quantity"] = ul["planned_quantity"]
+                            queries.update_work_order_line(ul["line_id"], update_data)
+
+                        queries.update_work_order_status(ot["id"], "Completada", obs)
+                        st.success(f"OT #{ot_num} completada{'.' if not updated_lines else '. Stock actualizado.'}")
+                        st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
-        else:
-            st.info("Esta OT no tiene insumos asignados")
+
+        with col_cancel:
+            if st.button(f"Devolver a Pendiente", key=f"return_{ot['id']}",
+                        use_container_width=True):
+                try:
+                    queries.update_work_order_status(ot["id"], "Pendiente")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 # --- Historial completadas ---
 if completadas:
     st.markdown("---")
     with st.expander(f"Historial completadas ({len(completadas)})"):
         for ot in completadas[:10]:
-            st.markdown(f"- **OT #{ot.get('ot_number')}** - {ot.get('date')} - Completada: {ot.get('completed_at', '-')[:10] if ot.get('completed_at') else '-'}")
+            st.markdown(f"- **OT #{ot.get('ot_number')}** [{ot.get('ot_type', 'Insumos')}] - {ot.get('date')} - Completada: {ot.get('completed_at', '-')[:10] if ot.get('completed_at') else '-'}")
