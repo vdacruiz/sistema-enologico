@@ -369,3 +369,63 @@ def get_wine_purchases_by_status(status: str):
     if status and status != "Todos":
         q = q.eq("status", status)
     return q.execute().data
+
+
+# ============================================================
+# ORDENES DE COMPRA UNIFICADAS
+# ============================================================
+
+def get_purchase_orders_unified(purchase_type: str = None, status: str = None, limit=100):
+    q = (get_supabase_client().table("purchase_orders")
+         .select("*, suppliers(name), grape_varieties(code, name), product_lines(name)")
+         .order("date", desc=True)
+         .limit(limit))
+    if purchase_type and purchase_type != "Todos":
+        q = q.eq("purchase_type", purchase_type)
+    if status and status != "Todos":
+        q = q.eq("status", status)
+    return q.execute().data
+
+
+def get_purchase_order_by_id(po_id: int):
+    return (get_supabase_client().table("purchase_orders")
+            .select("*, suppliers(name), grape_varieties(code, name), product_lines(name)")
+            .eq("id", po_id)
+            .single()
+            .execute().data)
+
+
+def update_purchase_order(po_id: int, data: dict):
+    return (get_supabase_client().table("purchase_orders")
+            .update(data).eq("id", po_id).execute().data)
+
+
+def get_po_wine_deliveries(po_id: int):
+    return (get_supabase_client().table("wine_purchase_deliveries")
+            .select("*, tanks(code, name)")
+            .eq("purchase_order_id", po_id)
+            .order("date")
+            .execute().data)
+
+
+def create_po_wine_delivery(data: dict):
+    return get_supabase_client().table("wine_purchase_deliveries").insert(data).execute().data
+
+
+def get_po_grape_deliveries(po_id: int):
+    return (get_supabase_client().table("grape_reception_deliveries")
+            .select("*, tanks(code, name)")
+            .eq("purchase_order_id", po_id)
+            .order("date")
+            .execute().data)
+
+
+def create_po_grape_delivery(data: dict):
+    return get_supabase_client().table("grape_reception_deliveries").insert(data).execute().data
+
+
+def get_po_supply_lines(po_id: int):
+    return (get_supabase_client().table("purchase_order_lines")
+            .select("*, supplies(name, code, unit)")
+            .eq("purchase_order_id", po_id)
+            .execute().data)
