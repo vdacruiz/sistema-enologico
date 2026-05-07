@@ -222,3 +222,100 @@ def get_tank_contents():
     return (get_supabase_client().table("tank_contents")
             .select("*, tanks(code, name, capacity_liters), wines(code), grape_varieties(code, name)")
             .execute().data)
+
+
+# ============================================================
+# RECEPCION DE VINO
+# ============================================================
+
+def create_wine_reception(data: dict):
+    return get_supabase_client().table("wine_receptions").insert(data).execute().data
+
+
+def get_wine_receptions(limit=50):
+    return (get_supabase_client().table("wine_receptions")
+            .select("*, grape_varieties(code, name), product_lines(name)")
+            .order("date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
+def get_wine_reception_by_id(reception_id: int):
+    return (get_supabase_client().table("wine_receptions")
+            .select("*, grape_varieties(code, name), product_lines(name)")
+            .eq("id", reception_id)
+            .single()
+            .execute().data)
+
+
+def update_wine_reception(reception_id: int, data: dict):
+    return (get_supabase_client().table("wine_receptions")
+            .update(data).eq("id", reception_id).execute().data)
+
+
+# ============================================================
+# LABORATORIO
+# ============================================================
+
+def get_lab_parameters(wine_type: str = None):
+    q = (get_supabase_client().table("lab_parameters")
+         .select("*").eq("is_active", True).order("sort_order"))
+    if wine_type:
+        q = q.eq("wine_type", wine_type)
+    return q.execute().data
+
+
+def create_lab_analysis(data: dict):
+    return get_supabase_client().table("lab_analyses").insert(data).execute().data
+
+
+def create_lab_analysis_results(results: list):
+    if results:
+        return get_supabase_client().table("lab_analysis_results").insert(results).execute().data
+    return []
+
+
+def get_lab_analyses(tank_id: int = None, wine_id: int = None, limit=50):
+    q = (get_supabase_client().table("lab_analyses")
+         .select("*, tanks(code, name), wines(code), grape_varieties(code, name)")
+         .order("date", desc=True)
+         .limit(limit))
+    if tank_id:
+        q = q.eq("tank_id", tank_id)
+    if wine_id:
+        q = q.eq("wine_id", wine_id)
+    return q.execute().data
+
+
+def get_lab_analysis_results(analysis_id: int):
+    return (get_supabase_client().table("lab_analysis_results")
+            .select("*, lab_parameters(code, name, unit, min_normal, max_normal, alert_value, critical_value, alert_direction)")
+            .eq("analysis_id", analysis_id)
+            .execute().data)
+
+
+def get_lab_history_for_tank(tank_id: int, parameter_code: str = None):
+    analyses = (get_supabase_client().table("lab_analyses")
+                .select("id, date")
+                .eq("tank_id", tank_id)
+                .order("date")
+                .execute().data)
+    if not analyses:
+        return []
+    analysis_ids = [a["id"] for a in analyses]
+    results = []
+    for aid in analysis_ids:
+        r = (get_supabase_client().table("lab_analysis_results")
+             .select("*, lab_parameters(code, name, unit, min_normal, max_normal, alert_value, critical_value)")
+             .eq("analysis_id", aid)
+             .execute().data)
+        date_val = next(a["date"] for a in analyses if a["id"] == aid)
+        for item in r:
+            item["date"] = date_val
+        results.extend(r)
+    return results
+
+
+def get_wines():
+    return (get_supabase_client().table("wines")
+            .select("*").eq("is_active", True).order("code").execute().data)

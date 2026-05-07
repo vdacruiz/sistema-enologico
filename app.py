@@ -129,10 +129,14 @@ pg = st.navigation(
             st.Page("pages/01_ordenes_trabajo.py", title="Ordenes de Trabajo", icon="📋"),
             st.Page("pages/06_ejecutar_ot.py", title="Ejecutar OT (Operario)", icon="🔧"),
             st.Page("pages/02_recepcion_insumos.py", title="Recepcion de Insumos", icon="📦"),
+            st.Page("pages/07_recepcion_vino.py", title="Recepcion de Vino", icon="🍷"),
         ],
         "Inventario": [
             st.Page("pages/03_stock_insumos.py", title="Stock de Insumos", icon="📊"),
             st.Page("pages/04_stock_cubas.py", title="Stock de Cubas", icon="🏗️"),
+        ],
+        "Laboratorio": [
+            st.Page("pages/08_laboratorio.py", title="Analisis de Laboratorio", icon="🔬"),
         ],
         "Administracion": [
             st.Page("pages/05_configuracion.py", title="Configuracion", icon="⚙️"),
