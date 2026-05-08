@@ -16,6 +16,7 @@ except Exception as e:
     st.stop()
 
 content_map = {c["tank_id"]: c for c in contents}
+tank_code_map = {t["id"]: t["code"] for t in tanks}
 
 tank_data = []
 for t in tanks:
@@ -375,31 +376,31 @@ if sel_id:
 
             try:
                 wine_info = queries.get_wine_by_id(t["wine_id"])
-            except Exception:
+            except Exception as e:
                 wine_info = None
+                st.error(f"Error cargando vino: {e}")
 
             if wine_info:
                 cepa_w = (wine_info.get("grape_varieties") or {})
                 linea_w = (wine_info.get("product_lines") or {})
                 notes_w = wine_info.get("notes", "") or ""
+                blend_html = f'<div style="margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:6px;font-size:0.88rem;"><strong>Origen:</strong> {notes_w}</div>' if "Mezcla" in notes_w else ""
 
-                st.markdown(f"""
-                <div class="vda-card" style="border-left:4px solid #722F37;">
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-                        <div><small style="color:#888;">CODIGO</small><br><strong>{wine_info.get('code', '-')}</strong></div>
-                        <div><small style="color:#888;">CEPA</small><br><strong>{cepa_w.get('code', '-')} - {cepa_w.get('name', '-')}</strong></div>
-                        <div><small style="color:#888;">LINEA</small><br><strong>{linea_w.get('name', '-')}</strong></div>
-                        <div><small style="color:#888;">TIPO</small><br><strong>{wine_info.get('wine_type', '-')}</strong></div>
-                    </div>
-                    {"<div style='margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:6px;font-size:0.88rem;'><strong>Origen:</strong> " + notes_w + "</div>" if "Mezcla" in notes_w else ""}
-                </div>
-                """, unsafe_allow_html=True)
+                info_html = f'<div style="background:#f9fafb;border-radius:10px;padding:16px 20px;border-left:4px solid #722F37;margin-bottom:12px;">'
+                info_html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">'
+                info_html += f'<div><small style="color:#888;">CODIGO</small><br><strong>{wine_info.get("code", "-")}</strong></div>'
+                info_html += f'<div><small style="color:#888;">CEPA</small><br><strong>{cepa_w.get("code", "-")} - {cepa_w.get("name", "-")}</strong></div>'
+                info_html += f'<div><small style="color:#888;">LINEA</small><br><strong>{linea_w.get("name", "-")}</strong></div>'
+                info_html += f'<div><small style="color:#888;">TIPO</small><br><strong>{wine_info.get("wine_type", "-")}</strong></div>'
+                info_html += f'</div>{blend_html}</div>'
+                st.markdown(info_html, unsafe_allow_html=True)
 
             # --- Todas las OTs del vino con detalle ---
             try:
                 wine_ots = queries.get_work_orders_by_wine(t["wine_id"])
-            except Exception:
+            except Exception as e:
                 wine_ots = []
+                st.error(f"Error cargando OTs: {e}")
 
             if wine_ots:
                 st.markdown(f"**Historial Completo de Operaciones** ({len(wine_ots)} OTs)")
@@ -414,10 +415,8 @@ if sel_id:
                     ot_liters = ot.get("liters") or "-"
                     obs = ot.get("observations") or ""
 
-                    src_tank = ot.get("tanks!work_orders_source_tank_id_fkey") or ot.get("tanks", {})
-                    dst_tank = ot.get("tanks!work_orders_dest_tank_id_fkey") or {}
-                    src_code = src_tank.get("code", "-") if isinstance(src_tank, dict) else "-"
-                    dst_code = dst_tank.get("code", "-") if isinstance(dst_tank, dict) else "-"
+                    src_code = tank_code_map.get(ot.get("source_tank_id"), "-")
+                    dst_code = tank_code_map.get(ot.get("dest_tank_id"), "-")
 
                     proc_name = proc.get("name", "-") if isinstance(proc, dict) else "-"
                     worker_name = worker.get("full_name", "-") if isinstance(worker, dict) else "-"
@@ -432,11 +431,10 @@ if sel_id:
                     type_icon = "&#128230;" if ot_type == "Insumos" else "&#127858;"
 
                     if ot_type == "Movimiento":
-                        cubas_html = f"<strong>Cuba {src_code}</strong> &#10132; <strong>Cuba {dst_code}</strong> | {ot_liters} L"
+                        cubas_html = f'<strong>Cuba {src_code}</strong> &#10132; <strong>Cuba {dst_code}</strong> | {ot_liters} L'
                     else:
-                        cubas_html = f"<strong>Cuba {src_code}</strong>" if src_code != "-" else ""
+                        cubas_html = f'<strong>Cuba {src_code}</strong>' if src_code != "-" else ""
 
-                    # Cargar lineas de insumos
                     ot_lines_html = ""
                     if ot_type == "Insumos" and ot_status == "Completada":
                         try:
@@ -474,27 +472,18 @@ if sel_id:
                     if obs:
                         obs_html = f'<div style="margin-top:6px;font-size:0.82rem;color:#6b7280;font-style:italic;">Obs: {obs[:100]}</div>'
 
-                    st.markdown(f"""
-                    <div style="background:white;border-radius:10px;padding:14px 18px;margin-bottom:8px;
-                                border-left:4px solid {s_border};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <div>
-                                <span style="font-weight:700;color:#1e1e2f;">OT #{ot_num}</span>
-                                <span style="background:{s_bg};color:{s_text};padding:2px 8px;border-radius:12px;
-                                      font-size:0.72rem;font-weight:600;margin-left:6px;">{ot_status}</span>
-                                <span style="color:#6b7280;font-size:0.8rem;margin-left:8px;">{type_icon} {ot_type}</span>
-                            </div>
-                            <span style="color:#6b7280;font-size:0.82rem;">{ot_date}</span>
-                        </div>
-                        <div style="margin-top:8px;display:flex;gap:16px;font-size:0.88rem;color:#374151;">
-                            <span><strong>Operacion:</strong> {proc_name}</span>
-                            <span>{cubas_html}</span>
-                            <span><strong>Operario:</strong> {worker_name}</span>
-                        </div>
-                        {ot_lines_html}
-                        {obs_html}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    card = f'<div style="background:white;border-radius:10px;padding:14px 18px;margin-bottom:8px;border-left:4px solid {s_border};box-shadow:0 1px 2px rgba(0,0,0,0.05);">'
+                    card += '<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    card += f'<div><span style="font-weight:700;color:#1e1e2f;">OT #{ot_num}</span>'
+                    card += f'<span style="background:{s_bg};color:{s_text};padding:2px 8px;border-radius:12px;font-size:0.72rem;font-weight:600;margin-left:6px;">{ot_status}</span>'
+                    card += f'<span style="color:#6b7280;font-size:0.8rem;margin-left:8px;">{type_icon} {ot_type}</span></div>'
+                    card += f'<span style="color:#6b7280;font-size:0.82rem;">{ot_date}</span></div>'
+                    card += f'<div style="margin-top:8px;display:flex;gap:16px;font-size:0.88rem;color:#374151;">'
+                    card += f'<span><strong>Operacion:</strong> {proc_name}</span>'
+                    card += f'<span>{cubas_html}</span>'
+                    card += f'<span><strong>Operario:</strong> {worker_name}</span></div>'
+                    card += ot_lines_html + obs_html + '</div>'
+                    st.markdown(card, unsafe_allow_html=True)
             else:
                 st.info("Sin operaciones registradas para este vino")
 
@@ -528,13 +517,11 @@ if sel_id:
                 st.markdown(f"**Movimientos entre Cubas** ({len(movements)})")
                 mv_rows = []
                 for m in movements:
-                    src = m.get("tanks!tank_movements_source_tank_id_fkey") or {}
-                    dst = m.get("tanks!tank_movements_dest_tank_id_fkey") or {}
                     wo = m.get("work_orders") or {}
                     mv_rows.append({
                         "Fecha": m.get("date", "-"),
-                        "Origen": src.get("code", "-") if isinstance(src, dict) else "-",
-                        "Destino": dst.get("code", "-") if isinstance(dst, dict) else "-",
+                        "Origen": tank_code_map.get(m.get("source_tank_id"), "-"),
+                        "Destino": tank_code_map.get(m.get("dest_tank_id"), "-"),
                         "Litros": m.get("liters", "-"),
                         "Operacion": m.get("operation", "-"),
                         "OT": wo.get("ot_number", "-") if isinstance(wo, dict) else "-",

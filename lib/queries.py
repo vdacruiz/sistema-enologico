@@ -460,7 +460,7 @@ def get_wine_by_id(wine_id: int):
 
 def get_work_orders_by_wine(wine_id: int, limit=100):
     return (get_supabase_client().table("work_orders")
-            .select("*, grape_varieties(code), workers(full_name), winemaking_processes(name), wines(code), tanks!work_orders_source_tank_id_fkey(code), tanks!work_orders_dest_tank_id_fkey(code)")
+            .select("*, grape_varieties(code), workers(full_name), winemaking_processes(name), wines(code)")
             .eq("wine_id", wine_id)
             .order("date", desc=True)
             .limit(limit)
@@ -469,7 +469,7 @@ def get_work_orders_by_wine(wine_id: int, limit=100):
 
 def get_tank_movements_by_wine(wine_id: int, limit=50):
     return (get_supabase_client().table("tank_movements")
-            .select("*, wines(code), tanks!tank_movements_source_tank_id_fkey(code), tanks!tank_movements_dest_tank_id_fkey(code), work_orders(ot_number)")
+            .select("*, wines(code), work_orders(ot_number)")
             .eq("wine_id", wine_id)
             .order("date", desc=True)
             .limit(limit)
