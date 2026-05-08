@@ -11,13 +11,47 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# --- iOS: icono home screen + comportamiento app ---
-st.markdown("""
-<link rel="apple-touch-icon" sizes="180x180" href="app/static/logo_vda.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="VDA Enologico">
-""", unsafe_allow_html=True)
+# --- iOS: icono home screen + comportamiento app nativa ---
+import streamlit.components.v1 as components
+components.html("""
+<script>
+try {
+    var doc = window.parent.document;
+    if (!doc.querySelector('link[rel="apple-touch-icon"]')) {
+        var icon = doc.createElement('link');
+        icon.rel = 'apple-touch-icon';
+        icon.sizes = '180x180';
+        icon.href = '/app/static/logo_vda.png';
+        doc.head.appendChild(icon);
+
+        var manifest = doc.createElement('link');
+        manifest.rel = 'manifest';
+        manifest.href = '/app/static/manifest.json';
+        doc.head.appendChild(manifest);
+
+        var capable = doc.createElement('meta');
+        capable.name = 'apple-mobile-web-app-capable';
+        capable.content = 'yes';
+        doc.head.appendChild(capable);
+
+        var title = doc.createElement('meta');
+        title.name = 'apple-mobile-web-app-title';
+        title.content = 'VDA Enologico';
+        doc.head.appendChild(title);
+
+        var style = doc.createElement('meta');
+        style.name = 'apple-mobile-web-app-status-bar-style';
+        style.content = 'black-translucent';
+        doc.head.appendChild(style);
+
+        var theme = doc.createElement('meta');
+        theme.name = 'theme-color';
+        theme.content = '#722F37';
+        doc.head.appendChild(theme);
+    }
+} catch(e) {}
+</script>
+""", height=0)
 
 # --- Estilos profesionales tipo ERP ---
 st.markdown("""
