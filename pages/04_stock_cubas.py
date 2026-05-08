@@ -297,14 +297,14 @@ if sel_id:
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-    # --- OTs RECIENTES ---
+    # --- OTs RECIENTES DE LA CUBA ---
     try:
         ots = queries.get_work_orders_by_tank(sel_id, limit=10)
     except Exception:
         ots = []
 
     if ots:
-        st.markdown("**Ordenes de Trabajo recientes**")
+        st.markdown("**Ordenes de Trabajo recientes (esta cuba)**")
         ot_rows = []
         for ot in ots:
             proc = ot.get("winemaking_processes") or {}
@@ -321,6 +321,145 @@ if sel_id:
         st.dataframe(pd.DataFrame(ot_rows), use_container_width=True, hide_index=True)
     else:
         st.info("Sin OTs registradas para esta cuba")
+
+    # === TRAZABILIDAD DEL VINO ===
+    if t["wine_id"]:
+        st.markdown("")
+        if st.button("Ver Trazabilidad Completa del Vino", type="primary", key="btn_trace"):
+            st.session_state["show_trace"] = t["wine_id"]
+
+        if st.session_state.get("show_trace") == t["wine_id"]:
+            st.markdown("---")
+            st.markdown(f"### Trazabilidad: {t['wine_code']}")
+
+            try:
+                wine_info = queries.get_wine_by_id(t["wine_id"])
+            except Exception:
+                wine_info = None
+
+            if wine_info:
+                cepa_w = (wine_info.get("grape_varieties") or {})
+                linea_w = (wine_info.get("product_lines") or {})
+                notes_w = wine_info.get("notes", "") or ""
+
+                st.markdown(f"""
+                <div class="vda-card" style="border-left:4px solid #722F37;">
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+                        <div><small style="color:#888;">CODIGO</small><br><strong>{wine_info.get('code', '-')}</strong></div>
+                        <div><small style="color:#888;">CEPA</small><br><strong>{cepa_w.get('code', '-')} - {cepa_w.get('name', '-')}</strong></div>
+                        <div><small style="color:#888;">LINEA</small><br><strong>{linea_w.get('name', '-')}</strong></div>
+                        <div><small style="color:#888;">TIPO</small><br><strong>{wine_info.get('wine_type', '-')}</strong></div>
+                    </div>
+                    {"<div style='margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:6px;font-size:0.88rem;'><strong>Origen:</strong> " + notes_w + "</div>" if "Mezcla" in notes_w else ""}
+                </div>
+                """, unsafe_allow_html=True)
+
+            # --- Todas las OTs del vino ---
+            try:
+                wine_ots = queries.get_work_orders_by_wine(t["wine_id"])
+            except Exception:
+                wine_ots = []
+
+            if wine_ots:
+                st.markdown(f"**Historial de Operaciones** ({len(wine_ots)} OTs)")
+
+                timeline_rows = []
+                for ot in wine_ots:
+                    proc = ot.get("winemaking_processes") or {}
+                    worker = ot.get("workers") or {}
+                    ot_type = ot.get("ot_type", "Insumos")
+
+                    src_tank = ot.get("tanks!work_orders_source_tank_id_fkey") or ot.get("tanks", {})
+                    dst_tank = ot.get("tanks!work_orders_dest_tank_id_fkey") or {}
+                    src_code = src_tank.get("code", "-") if isinstance(src_tank, dict) else "-"
+                    dst_code = dst_tank.get("code", "-") if isinstance(dst_tank, dict) else "-"
+
+                    cubas_txt = ""
+                    if ot_type == "Movimiento":
+                        cubas_txt = f"{src_code} → {dst_code}"
+                    elif src_code != "-":
+                        cubas_txt = src_code
+
+                    timeline_rows.append({
+                        "Fecha": ot.get("date", "-"),
+                        "OT": ot.get("ot_number", "?"),
+                        "Tipo": ot_type,
+                        "Operacion": proc.get("name", "-") if isinstance(proc, dict) else "-",
+                        "Cubas": cubas_txt,
+                        "Litros": ot.get("liters") or "-",
+                        "Operario": worker.get("full_name", "-") if isinstance(worker, dict) else "-",
+                        "Estado": ot.get("status", "-"),
+                        "Obs.": (ot.get("observations") or "-")[:50],
+                    })
+
+                df_trace = pd.DataFrame(timeline_rows)
+
+                def color_trace_status(val):
+                    colors = {
+                        "Pendiente": "background-color: #fef3c7; color: #92400e",
+                        "En Proceso": "background-color: #dbeafe; color: #1e40af",
+                        "Completada": "background-color: #d1fae5; color: #065f46",
+                        "Anulada": "background-color: #f3f4f6; color: #4b5563",
+                    }
+                    return colors.get(val, "")
+
+                def color_trace_type(val):
+                    return "background-color: #dbeafe; color: #1e40af" if val == "Movimiento" else "background-color: #f0fdf4; color: #166534"
+
+                st.dataframe(
+                    df_trace.style.map(color_trace_status, subset=["Estado"])
+                                  .map(color_trace_type, subset=["Tipo"]),
+                    use_container_width=True, hide_index=True, height=400,
+                )
+            else:
+                st.info("Sin operaciones registradas para este vino")
+
+            # --- Analisis de laboratorio del vino ---
+            try:
+                wine_analyses = queries.get_lab_analyses(wine_id=t["wine_id"], limit=20)
+            except Exception:
+                wine_analyses = []
+
+            if wine_analyses:
+                st.markdown(f"**Historial de Analisis de Laboratorio** ({len(wine_analyses)})")
+                an_rows = []
+                for a in wine_analyses:
+                    tank_a = a.get("tanks") or {}
+                    an_rows.append({
+                        "Fecha": a.get("date", "-"),
+                        "Cuba": tank_a.get("code", "-") if isinstance(tank_a, dict) else "-",
+                        "Etapa": a.get("stage", "-"),
+                        "Analista": a.get("analyst", "-"),
+                        "Estado": a.get("status", "-"),
+                    })
+                st.dataframe(pd.DataFrame(an_rows), use_container_width=True, hide_index=True)
+
+            # --- Movimientos entre cubas ---
+            try:
+                movements = queries.get_tank_movements_by_wine(t["wine_id"])
+            except Exception:
+                movements = []
+
+            if movements:
+                st.markdown(f"**Movimientos entre Cubas** ({len(movements)})")
+                mv_rows = []
+                for m in movements:
+                    src = m.get("tanks!tank_movements_source_tank_id_fkey") or {}
+                    dst = m.get("tanks!tank_movements_dest_tank_id_fkey") or {}
+                    wo = m.get("work_orders") or {}
+                    mv_rows.append({
+                        "Fecha": m.get("date", "-"),
+                        "Origen": src.get("code", "-") if isinstance(src, dict) else "-",
+                        "Destino": dst.get("code", "-") if isinstance(dst, dict) else "-",
+                        "Litros": m.get("liters", "-"),
+                        "Operacion": m.get("operation", "-"),
+                        "OT": wo.get("ot_number", "-") if isinstance(wo, dict) else "-",
+                    })
+                st.dataframe(pd.DataFrame(mv_rows), use_container_width=True, hide_index=True)
+
+            if st.button("Cerrar Trazabilidad", key="btn_close_trace"):
+                del st.session_state["show_trace"]
+                st.rerun()
 
 # === GRILLA VISUAL DE CUBAS (en expander para no saturar) ===
 st.markdown("---")

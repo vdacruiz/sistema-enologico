@@ -378,6 +378,31 @@ def create_wine(data: dict):
     return get_supabase_client().table("wines").insert(data).execute().data
 
 
+def get_wine_by_id(wine_id: int):
+    result = (get_supabase_client().table("wines")
+              .select("*, grape_varieties(id, code, name), product_lines(id, name)")
+              .eq("id", wine_id).execute().data)
+    return result[0] if result else None
+
+
+def get_work_orders_by_wine(wine_id: int, limit=100):
+    return (get_supabase_client().table("work_orders")
+            .select("*, grape_varieties(code), workers(full_name), winemaking_processes(name), wines(code), tanks!work_orders_source_tank_id_fkey(code), tanks!work_orders_dest_tank_id_fkey(code)")
+            .eq("wine_id", wine_id)
+            .order("date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
+def get_tank_movements_by_wine(wine_id: int, limit=50):
+    return (get_supabase_client().table("tank_movements")
+            .select("*, wines(code), tanks!tank_movements_source_tank_id_fkey(code), tanks!tank_movements_dest_tank_id_fkey(code), work_orders(ot_number)")
+            .eq("wine_id", wine_id)
+            .order("date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
 # ============================================================
 # COMPRAS DE VINO
 # ============================================================
