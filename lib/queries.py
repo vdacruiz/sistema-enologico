@@ -154,11 +154,19 @@ def complete_movement_ot(ot: dict):
     if liters <= 0:
         return
 
+    # Obtener info completa del vino y de la cuba origen
+    wine_data = {}
+    if wine_id:
+        wine_rec = client.table("wines").select("grape_variety_id, product_line_id, wine_type").eq("id", wine_id).execute().data
+        if wine_rec:
+            wine_data = wine_rec[0]
+
+    src_data = {}
     if src_id:
-        src = client.table("tank_contents").select("*").eq("tank_id", src_id).execute().data
-        if src:
-            src = src[0]
-            new_liters = max(float(src.get("current_liters", 0)) - liters, 0)
+        src_rows = client.table("tank_contents").select("*").eq("tank_id", src_id).execute().data
+        if src_rows:
+            src_data = src_rows[0]
+            new_liters = max(float(src_data.get("current_liters", 0)) - liters, 0)
             update = {"current_liters": new_liters, "updated_at": "now()"}
             if new_liters == 0:
                 update["status"] = "Vacio"
@@ -166,10 +174,25 @@ def complete_movement_ot(ot: dict):
                 update["grape_variety_id"] = None
                 update["product_line_id"] = None
                 update["wine_type"] = None
+                update["wine_state"] = None
+                update["apto_envasado"] = False
+                update["apto_envasado_at"] = None
+                update["apto_envasado_by"] = None
                 update["last_operation"] = "Vaciada por OT"
             else:
                 update["last_operation"] = f"Traspaso salida {liters:.0f} L"
-            client.table("tank_contents").update(update).eq("id", src["id"]).execute()
+            client.table("tank_contents").update(update).eq("id", src_data["id"]).execute()
+
+    # Datos a copiar: prioridad vino > cuba origen
+    copy_fields = {
+        "wine_id": wine_id,
+        "grape_variety_id": wine_data.get("grape_variety_id") or src_data.get("grape_variety_id"),
+        "product_line_id": wine_data.get("product_line_id") or src_data.get("product_line_id"),
+        "wine_type": wine_data.get("wine_type") or src_data.get("wine_type"),
+        "wine_state": src_data.get("wine_state"),
+        "vintage_year": src_data.get("vintage_year"),
+        "fml": src_data.get("fml"),
+    }
 
     if dst_id:
         dst = client.table("tank_contents").select("*").eq("tank_id", dst_id).execute().data
@@ -182,27 +205,17 @@ def complete_movement_ot(ot: dict):
                 "last_operation": f"Traspaso entrada {liters:.0f} L",
                 "updated_at": "now()",
             }
-            if wine_id and not dst.get("wine_id"):
-                wo = client.table("work_orders").select("grape_variety_id, wine_type, product_line_id").eq("id", ot["id"]).execute().data
-                if wo:
-                    update["wine_id"] = wine_id
-                    update["grape_variety_id"] = wo[0].get("grape_variety_id")
-                    update["product_line_id"] = wo[0].get("product_line_id")
-                    update["wine_type"] = wo[0].get("wine_type")
+            if not dst.get("wine_id"):
+                update.update(copy_fields)
             client.table("tank_contents").update(update).eq("id", dst["id"]).execute()
         else:
-            wo = client.table("work_orders").select("grape_variety_id, wine_type, product_line_id").eq("id", ot["id"]).execute().data
             insert = {
                 "tank_id": dst_id,
-                "wine_id": wine_id,
                 "current_liters": liters,
                 "status": "Ocupado",
                 "last_operation": f"Traspaso entrada {liters:.0f} L",
             }
-            if wo:
-                insert["grape_variety_id"] = wo[0].get("grape_variety_id")
-                insert["product_line_id"] = wo[0].get("product_line_id")
-                insert["wine_type"] = wo[0].get("wine_type")
+            insert.update(copy_fields)
             client.table("tank_contents").insert(insert).execute()
 
     client.table("tank_movements").insert({
