@@ -1,9 +1,14 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from textwrap import dedent
 from lib import queries
 from lib.auth import get_current_user, has_permission
 from lib.stock_engine import get_lots_with_stock, check_availability
+
+
+def _html(text):
+    st.markdown(dedent(text), unsafe_allow_html=True)
 
 st.title("Ejecutar Orden de Trabajo")
 
@@ -100,7 +105,7 @@ if en_proceso:
         type_icon = "&#128230;" if ot_type == "Insumos" else "&#127858;"
 
         # --- CABECERA DE LA OT ---
-        st.markdown(f"""
+        _html(f"""\
         <div style="background:linear-gradient(135deg, #eff6ff, #ffffff);border-radius:12px;
                     padding:20px 24px;border:2px solid {type_color};margin-bottom:16px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
@@ -128,12 +133,12 @@ if en_proceso:
                     <div style="font-weight:600;color:#1e1e2f;">{linea_name}</div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""")
 
         # --- INSTRUCCIONES SEGUN TIPO ---
         if ot_type == "Movimiento":
-            st.markdown(f"""
+            obs_html = f"<div style='margin-top:10px;padding:8px 12px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;font-size:0.88rem;'><strong>Nota:</strong> {observations}</div>" if observations else ""
+            _html(f"""\
             <div style="background:#f0fdf4;border-radius:10px;padding:20px;border:1px solid #bbf7d0;margin-bottom:16px;">
                 <div style="font-weight:700;font-size:1.1rem;color:#166534;margin-bottom:12px;">
                     INSTRUCCIONES DE MOVIMIENTO
@@ -166,12 +171,15 @@ if en_proceso:
                         <li>Volver aqui y presionar <strong>"Completar OT"</strong></li>
                     </ol>
                 </div>
-                {"<div style='margin-top:10px;padding:8px 12px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;font-size:0.88rem;'><strong>Nota:</strong> " + observations + "</div>" if observations else ""}
-            </div>
-            """, unsafe_allow_html=True)
+                {obs_html}
+            </div>""")
 
         else:
-            st.markdown(f"""
+            cuba_html = f"<div style='background:white;border-radius:8px;padding:14px 20px;text-align:center;border:2px solid #059669;flex:1;'><div style='color:#6b7280;font-size:0.75rem;text-transform:uppercase;'>Cuba</div><div style='font-size:1.4rem;font-weight:800;color:#059669;'>Cuba {src_tank}</div></div>" if src_tank != "-" else ""
+            liters_html = f"<div style='background:white;border-radius:8px;padding:14px 20px;text-align:center;border:1px solid #e5e7eb;flex:1;'><div style='color:#6b7280;font-size:0.75rem;text-transform:uppercase;'>Litros</div><div style='font-size:1.4rem;font-weight:700;color:#1e1e2f;'>{liters} L</div></div>" if liters != "-" else ""
+            step3 = f"Dirigirse a <strong>Cuba {src_tank}</strong> y aplicar" if src_tank != "-" else "Aplicar los insumos segun la operacion"
+            obs_html = f"<div style='margin-top:10px;padding:8px 12px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;font-size:0.88rem;'><strong>Nota:</strong> {observations}</div>" if observations else ""
+            _html(f"""\
             <div style="background:#eff6ff;border-radius:10px;padding:20px;border:1px solid #bfdbfe;margin-bottom:4px;">
                 <div style="font-weight:700;font-size:1.1rem;color:#1e40af;margin-bottom:12px;">
                     INSTRUCCIONES DE APLICACION DE INSUMOS
@@ -182,23 +190,22 @@ if en_proceso:
                         <div style="color:#6b7280;font-size:0.75rem;text-transform:uppercase;">Operacion</div>
                         <div style="font-size:1.2rem;font-weight:700;color:#2563eb;">{process_name}</div>
                     </div>
-                    {"<div style='background:white;border-radius:8px;padding:14px 20px;text-align:center;border:2px solid #059669;flex:1;'><div style=color:#6b7280;font-size:0.75rem;text-transform:uppercase;>Cuba</div><div style=font-size:1.4rem;font-weight:800;color:#059669;>Cuba " + src_tank + "</div></div>" if src_tank != "-" else ""}
-                    {"<div style='background:white;border-radius:8px;padding:14px 20px;text-align:center;border:1px solid #e5e7eb;flex:1;'><div style=color:#6b7280;font-size:0.75rem;text-transform:uppercase;>Litros</div><div style=font-size:1.4rem;font-weight:700;color:#1e1e2f;>" + str(liters) + " L</div></div>" if liters != "-" else ""}
+                    {cuba_html}
+                    {liters_html}
                 </div>
                 <div style="padding:10px 14px;background:#fefce8;border-radius:6px;border:1px solid #fde68a;">
                     <div style="font-weight:600;color:#92400e;font-size:0.85rem;">PASOS:</div>
                     <ol style="margin:6px 0 0 0;padding-left:20px;color:#1e1e2f;font-size:0.9rem;line-height:1.8;">
                         <li>Buscar los insumos indicados abajo en bodega</li>
                         <li>Verificar los lotes y cantidades</li>
-                        <li>{"Dirigirse a <strong>Cuba " + src_tank + "</strong> y aplicar" if src_tank != "-" else "Aplicar los insumos segun la operacion"}</li>
+                        <li>{step3}</li>
                         <li>Registrar las cantidades reales utilizadas abajo</li>
                         <li>Seleccionar el lote de cada insumo</li>
                         <li>Presionar <strong>"Completar OT"</strong></li>
                     </ol>
                 </div>
-                {"<div style='margin-top:10px;padding:8px 12px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;font-size:0.88rem;'><strong>Nota:</strong> " + observations + "</div>" if observations else ""}
-            </div>
-            """, unsafe_allow_html=True)
+                {obs_html}
+            </div>""")
 
         # --- FORMULARIO DE INSUMOS ---
         try:
@@ -208,13 +215,12 @@ if en_proceso:
 
         updated_lines = []
         if lines:
-            st.markdown(f"""
+            _html(f"""\
             <div style="background:#fff;border-radius:8px;padding:12px 16px;border:1px solid #e5e7eb;margin-bottom:8px;">
                 <div style="font-weight:600;color:#1e1e2f;font-size:0.95rem;">
                     Insumos a utilizar ({len(lines)})
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+            </div>""")
 
             for idx, line in enumerate(lines):
                 supply = line.get("supplies") or {}
@@ -222,15 +228,14 @@ if en_proceso:
                 supply_unit = supply.get("unit", "")
                 planned = line.get("planned_quantity") or line.get("quantity", 0)
 
-                st.markdown(f"""
+                _html(f"""\
                 <div style="background:#f9fafb;border-radius:8px;padding:10px 14px;margin:6px 0;
                             border-left:3px solid #2563eb;">
                     <span style="font-weight:700;color:#1e1e2f;font-size:1rem;">{idx+1}. {supply_name}</span>
                     <span style="color:#6b7280;font-size:0.85rem;margin-left:8px;">
                         Usar <strong style="color:#2563eb;">{planned} {supply_unit}</strong>
                     </span>
-                </div>
-                """, unsafe_allow_html=True)
+                </div>""")
 
                 col_real, col_lot = st.columns([1, 2])
 
@@ -364,7 +369,8 @@ else:
             task_desc = f"Aplicar <strong>{process_name}</strong> en <strong>Cuba {src_tank}</strong>" if src_tank != "-" else f"Aplicar <strong>{process_name}</strong>"
 
         with st.container():
-            st.markdown(f"""
+            urgent_badge = '<span style="background:#dc2626;color:white;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;margin-left:4px;">URGENTE</span>' if is_urgent else ''
+            _html(f"""\
             <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:10px;
                         box-shadow:0 1px 3px rgba(0,0,0,0.08);{border}">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -372,7 +378,7 @@ else:
                         <span style="font-size:1.1rem;font-weight:700;color:#1e1e2f;">OT #{ot_num}</span>
                         <span style="background:{type_color};color:white;padding:3px 10px;border-radius:20px;
                               font-size:0.75rem;font-weight:600;margin-left:8px;">{ot_type.upper()}</span>
-                        {'<span style="background:#dc2626;color:white;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:600;margin-left:4px;">URGENTE</span>' if is_urgent else ''}
+                        {urgent_badge}
                     </div>
                     <span style="color:#6b7280;font-size:0.85rem;">{ot.get('date', '-')}</span>
                 </div>
@@ -382,8 +388,7 @@ else:
                         {task_desc}
                     </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+            </div>""")
 
             can_execute = worker_id or has_permission("ejecutar_ot", "ejecutar")
             if can_execute:
