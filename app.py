@@ -1,4 +1,7 @@
 import streamlit as st
+import extra_streamlit_components as stx
+import json, base64
+from datetime import datetime, timedelta
 from lib.auth import login, get_current_user, has_permission, logout
 
 st.set_page_config(
@@ -99,11 +102,30 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- Cookie manager ---
+cookie_manager = stx.CookieManager(key="vda_cm")
+
 # --- Login ---
 if "user" not in st.session_state:
     st.session_state.user = None
 
 if not st.session_state.user:
+    if not st.session_state.get("_logged_out"):
+        saved = cookie_manager.get("vda_auth")
+        if saved:
+            try:
+                creds = json.loads(base64.b64decode(saved))
+                user_data = login(creds["u"], creds["p"])
+                if user_data:
+                    st.session_state.user = user_data
+                    st.rerun()
+                else:
+                    cookie_manager.delete("vda_auth")
+            except Exception:
+                cookie_manager.delete("vda_auth")
+    else:
+        st.session_state._logged_out = False
+
     col_empty1, col_login, col_empty2 = st.columns([1, 1, 1])
     with col_login:
         st.image("logo_vda.png", width=200)
@@ -111,11 +133,18 @@ if not st.session_state.user:
         st.markdown("---")
         username = st.text_input("Usuario:", placeholder="Ingrese su usuario")
         password = st.text_input("Clave:", type="password")
+        remember = st.checkbox("Recordarme")
         if st.button("Ingresar", type="primary", use_container_width=True):
             if username and password:
                 user = login(username, password)
                 if user:
                     st.session_state.user = user
+                    if remember:
+                        token = base64.b64encode(
+                            json.dumps({"u": username, "p": password}).encode()
+                        ).decode()
+                        cookie_manager.set("vda_auth", token,
+                                           expires_at=datetime.now() + timedelta(days=30))
                     st.rerun()
                 else:
                     st.error("Usuario o clave incorrectos")
@@ -130,6 +159,8 @@ with st.sidebar:
     st.markdown(f"**{user['full_name']}**")
     st.caption(f"Rol: {user['role_name']}")
     if st.button("Cerrar Sesion", use_container_width=True):
+        cookie_manager.delete("vda_auth")
+        st.session_state._logged_out = True
         logout()
         st.rerun()
     st.markdown("---")
