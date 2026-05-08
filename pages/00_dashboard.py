@@ -36,8 +36,14 @@ contents = data["tank_contents"]
 total_tanks = len(tanks)
 occupied = [c for c in contents if c.get("status") == "Ocupado"]
 total_liters = sum(c.get("current_liters", 0) or 0 for c in contents)
-total_capacity = sum(t.get("capacity_liters", 0) or 0 for t in tanks)
-pct_use = (total_liters / total_capacity * 100) if total_capacity > 0 else 0
+tank_cap_map = {t["id"]: t.get("capacity_liters", 0) or 0 for t in tanks}
+tanks_with_cap = [t for t in tanks if (t.get("capacity_liters", 0) or 0) > 0]
+total_capacity = sum(t["capacity_liters"] for t in tanks_with_cap)
+liters_in_cap_tanks = sum(
+    c.get("current_liters", 0) or 0 for c in contents
+    if tank_cap_map.get(c.get("tank_id"), 0) > 0
+)
+pct_use = (liters_in_cap_tanks / total_capacity * 100) if total_capacity > 0 else 0
 
 today_ots = data["recent_ots"]
 ots_pending = len([o for o in today_ots if o.get("status") == "Pendiente"])
