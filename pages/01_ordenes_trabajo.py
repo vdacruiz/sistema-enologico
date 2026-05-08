@@ -221,22 +221,31 @@ with tab_crear:
             _ot_lines = queries.get_work_order_lines(_ot_id)
             _pdf = build_ot_pdf(_ot_data, _ot_lines)
             st.success(f"OT #{_ot_data.get('ot_number', '?')} creada exitosamente")
+            st.warning("Debe descargar el PDF antes de continuar")
             col_otpdf, col_otnew = st.columns(2)
             with col_otpdf:
-                st.download_button(
+                downloaded = st.download_button(
                     "Descargar PDF",
                     data=_pdf,
                     file_name=f"OT_{_ot_data.get('ot_number', _ot_id)}.pdf",
                     mime="application/pdf",
                     key="new_ot_pdf",
+                    type="primary",
                 )
+                if downloaded:
+                    st.session_state[f"ot_pdf_downloaded_{_ot_id}"] = True
             with col_otnew:
-                if st.button("Crear otra OT", key="close_ot_success"):
-                    del st.session_state["last_created_ot"]
-                    st.rerun()
+                if st.session_state.get(f"ot_pdf_downloaded_{_ot_id}"):
+                    if st.button("Crear otra OT", key="close_ot_success"):
+                        del st.session_state["last_created_ot"]
+                        del st.session_state[f"ot_pdf_downloaded_{_ot_id}"]
+                        st.rerun()
+                else:
+                    st.button("Crear otra OT", key="close_ot_success", disabled=True,
+                              help="Primero descargue el PDF")
         except Exception:
             del st.session_state["last_created_ot"]
-        st.markdown("---")
+        st.stop()
 
     if "ot_lines" not in st.session_state:
         st.session_state.ot_lines = [{"supply_id": None, "lot_id": None, "quantity": 0.0}]
@@ -287,17 +296,61 @@ with tab_crear:
                                  format_func=lambda x: worker_options[x],
                                  index=None, placeholder="Seleccione operario...", key="new_worker")
 
+    try:
+        tank_contents = queries.get_tank_contents()
+    except Exception:
+        tank_contents = []
+    content_by_tank = {c["tank_id"]: c for c in tank_contents}
+
+    is_movement = ot_type == "Movimiento de Vino"
+
+    if wine_id:
+        source_tanks = [t for t in ref["tanks"]
+                        if content_by_tank.get(t["id"], {}).get("wine_id") == wine_id
+                        and (content_by_tank.get(t["id"], {}).get("current_liters", 0) or 0) > 0]
+        if not source_tanks:
+            st.warning("No hay cubas con este vino. Verifique el codigo de vino seleccionado.")
+    else:
+        source_tanks = ref["tanks"]
+
     col_t1, col_t2, col_t3, col_t4 = st.columns([2, 2, 2, 1])
     with col_t1:
-        tank_options = {t["id"]: f"Cuba {t['code']}" for t in ref["tanks"]}
-        source_tank_id = st.selectbox("Cuba Inicial", options=list(tank_options.keys()),
-                                      format_func=lambda x: tank_options[x],
+        source_options = {}
+        for t in source_tanks:
+            c = content_by_tank.get(t["id"], {})
+            lts = c.get("current_liters", 0) or 0
+            cepa_c = (c.get("grape_varieties") or {}).get("code", "")
+            if wine_id:
+                source_options[t["id"]] = f"Cuba {t['code']} — {lts:,.0f} L {cepa_c}"
+            else:
+                source_options[t["id"]] = f"Cuba {t['code']}"
+        source_tank_id = st.selectbox("Cuba Inicial", options=list(source_options.keys()),
+                                      format_func=lambda x: source_options[x],
                                       index=None, placeholder="Seleccione...", key="new_src_tank")
+
     with col_t2:
-        dest_tank_id = st.selectbox("Cuba Destino", options=list(tank_options.keys()),
-                                    format_func=lambda x: tank_options[x],
+        if is_movement:
+            dest_tanks = [t for t in ref["tanks"] if t["id"] != source_tank_id]
+            dest_options = {}
+            for t in dest_tanks:
+                c = content_by_tank.get(t["id"], {})
+                status = c.get("status", "Vacio")
+                lts = c.get("current_liters", 0) or 0
+                cepa_c = (c.get("grape_varieties") or {}).get("code", "")
+                tag = "Vacia" if status == "Vacio" else f"{lts:,.0f} L {cepa_c}"
+                dest_options[t["id"]] = f"Cuba {t['code']} — {tag}"
+        else:
+            dest_options = {t["id"]: f"Cuba {t['code']}" for t in ref["tanks"]}
+        dest_tank_id = st.selectbox("Cuba Destino", options=list(dest_options.keys()),
+                                    format_func=lambda x: dest_options[x],
                                     index=None, placeholder="Seleccione...", key="new_dst_tank")
+
     with col_t3:
+        max_liters = 0
+        if is_movement and source_tank_id:
+            src_content = content_by_tank.get(source_tank_id, {})
+            max_liters = int(src_content.get("current_liters", 0) or 0)
+            st.caption(f"Disponible: {max_liters:,} L")
         liters = st.number_input("Litros", value=0, min_value=0, step=100, key="new_liters")
     with col_t4:
         priority = st.selectbox("Prioridad", ["Normal", "Urgente"], key="new_priority")
@@ -398,6 +451,9 @@ with tab_crear:
                     st.error(f"Error: {e}")
 
         elif ot_type == "Movimiento de Vino":
+            src_content = content_by_tank.get(source_tank_id, {})
+            src_liters = int(src_content.get("current_liters", 0) or 0)
+            src_wine = src_content.get("wine_id")
             if not worker_id:
                 st.error("Debe asignar un operario")
             elif not source_tank_id:
@@ -408,6 +464,10 @@ with tab_crear:
                 st.error("Cuba Inicial y Destino deben ser diferentes")
             elif liters <= 0:
                 st.error("Debe indicar los litros a mover")
+            elif src_wine != wine_id:
+                st.error("La Cuba Inicial no contiene el vino seleccionado")
+            elif liters > src_liters:
+                st.error(f"La Cuba Inicial solo tiene {src_liters:,} litros disponibles")
             else:
                 try:
                     wo_data = {
