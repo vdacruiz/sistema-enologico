@@ -266,6 +266,10 @@ if en_proceso:
                             queries.update_work_order_line(ul["line_id"], update_data)
 
                         queries.update_work_order_status(ot["id"], "Completada", obs)
+
+                        if ot_type == "Movimiento":
+                            queries.complete_movement_ot(ot)
+
                         st.success(f"OT #{ot_num} completada exitosamente")
                         st.cache_data.clear()
                         st.rerun()

@@ -143,6 +143,79 @@ def update_work_order_line(line_id: int, data: dict):
             .update(data).eq("id", line_id).execute().data)
 
 
+def complete_movement_ot(ot: dict):
+    from datetime import date as _date
+    client = get_supabase_client()
+    src_id = ot.get("source_tank_id")
+    dst_id = ot.get("dest_tank_id")
+    liters = float(ot.get("liters") or 0)
+    wine_id = ot.get("wine_id")
+    movement_date = ot.get("date") or str(_date.today())
+    if liters <= 0:
+        return
+
+    if src_id:
+        src = client.table("tank_contents").select("*").eq("tank_id", src_id).execute().data
+        if src:
+            src = src[0]
+            new_liters = max(float(src.get("current_liters", 0)) - liters, 0)
+            update = {"current_liters": new_liters, "updated_at": "now()"}
+            if new_liters == 0:
+                update["status"] = "Vacio"
+                update["wine_id"] = None
+                update["grape_variety_id"] = None
+                update["product_line_id"] = None
+                update["wine_type"] = None
+                update["last_operation"] = "Vaciada por OT"
+            else:
+                update["last_operation"] = f"Traspaso salida {liters:.0f} L"
+            client.table("tank_contents").update(update).eq("id", src["id"]).execute()
+
+    if dst_id:
+        dst = client.table("tank_contents").select("*").eq("tank_id", dst_id).execute().data
+        if dst:
+            dst = dst[0]
+            new_liters = float(dst.get("current_liters", 0)) + liters
+            update = {
+                "current_liters": new_liters,
+                "status": "Ocupado",
+                "last_operation": f"Traspaso entrada {liters:.0f} L",
+                "updated_at": "now()",
+            }
+            if wine_id and not dst.get("wine_id"):
+                wo = client.table("work_orders").select("grape_variety_id, wine_type, product_line_id").eq("id", ot["id"]).execute().data
+                if wo:
+                    update["wine_id"] = wine_id
+                    update["grape_variety_id"] = wo[0].get("grape_variety_id")
+                    update["product_line_id"] = wo[0].get("product_line_id")
+                    update["wine_type"] = wo[0].get("wine_type")
+            client.table("tank_contents").update(update).eq("id", dst["id"]).execute()
+        else:
+            wo = client.table("work_orders").select("grape_variety_id, wine_type, product_line_id").eq("id", ot["id"]).execute().data
+            insert = {
+                "tank_id": dst_id,
+                "wine_id": wine_id,
+                "current_liters": liters,
+                "status": "Ocupado",
+                "last_operation": f"Traspaso entrada {liters:.0f} L",
+            }
+            if wo:
+                insert["grape_variety_id"] = wo[0].get("grape_variety_id")
+                insert["product_line_id"] = wo[0].get("product_line_id")
+                insert["wine_type"] = wo[0].get("wine_type")
+            client.table("tank_contents").insert(insert).execute()
+
+    client.table("tank_movements").insert({
+        "date": movement_date,
+        "source_tank_id": src_id,
+        "dest_tank_id": dst_id,
+        "wine_id": wine_id,
+        "liters": liters,
+        "operation": "Traspaso",
+        "work_order_id": ot["id"],
+    }).execute()
+
+
 def delete_work_order(work_order_id: int):
     get_supabase_client().table("work_order_lines").delete().eq("work_order_id", work_order_id).execute()
     return get_supabase_client().table("work_orders").delete().eq("id", work_order_id).execute().data
