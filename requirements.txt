@@ -5,3 +5,4 @@ pandas>=2.0.0
 plotly>=5.0.0
 fpdf2>=2.7.0
 extra-streamlit-components>=0.1.60
+# v2 force redeploy
