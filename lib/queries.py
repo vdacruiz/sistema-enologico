@@ -348,6 +348,26 @@ def get_lab_history_for_tank(tank_id: int, parameter_code: str = None):
     return results
 
 
+def get_latest_analysis_for_wine(wine_id: int):
+    result = (get_supabase_client().table("lab_analyses")
+              .select("id, date, tank_id, stage, analyst, notes, status, tanks(code)")
+              .eq("wine_id", wine_id)
+              .order("date", desc=True)
+              .limit(1)
+              .execute().data)
+    return result[0] if result else None
+
+
+def get_latest_analysis_for_tank(tank_id: int):
+    result = (get_supabase_client().table("lab_analyses")
+              .select("id, date, tank_id, stage, analyst, notes, status, tanks(code)")
+              .eq("tank_id", tank_id)
+              .order("date", desc=True)
+              .limit(1)
+              .execute().data)
+    return result[0] if result else None
+
+
 def get_wines():
     return (get_supabase_client().table("wines")
             .select("*, grape_varieties(id, code, name), product_lines(id, name)")

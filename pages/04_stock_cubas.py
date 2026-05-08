@@ -41,25 +41,14 @@ for t in tanks:
         "pct": round(pct, 1),
         "status": status,
         "wine_code": wine_code,
+        "wine_id": c.get("wine_id") if c else None,
         "grape_code": grape_code,
         "grape_name": grape_name,
         "product_line": pl_name,
         "wine_type": wine_type or "",
         "wine_state": wine_state or "",
         "vintage_year": c.get("vintage_year") if c else None,
-        "ph": c.get("ph") if c else None,
-        "total_acidity": c.get("total_acidity") if c else None,
-        "volatile_acidity": c.get("volatile_acidity") if c else None,
-        "free_so2": c.get("free_so2") if c else None,
-        "total_so2": c.get("total_so2") if c else None,
-        "residual_sugar": c.get("residual_sugar") if c else None,
-        "so2_molecular": c.get("so2_molecular") if c else None,
-        "alcohol_degree": c.get("alcohol_degree") if c else None,
-        "ntu": c.get("ntu") if c else None,
-        "color": c.get("color") if c else None,
-        "co2": c.get("co2") if c else None,
         "fml": c.get("fml") if c else None,
-        "last_analysis_date": c.get("last_analysis_date") if c else None,
     })
 
 TYPE_COLORS = {
@@ -158,64 +147,46 @@ sel_id = st.selectbox("Seleccione cuba:",
                       key="tc_sel") if detail_opts else None
 
 
-# === FUNCIONES DE EVALUACION ===
-def eval_param(name, value, wine_type):
-    if value is None:
-        return "-", "", "#f5f5f5"
-    wt = wine_type or "Tinto"
-    ranges = {
-        "pH": {"Tinto": (3.40, 3.80, 3.30, 3.90), "Blanco": (3.10, 3.40, 3.00, 3.50), "Rosado": (3.10, 3.40, 3.00, 3.50)},
-        "A.T.": {"Tinto": (3.50, 6.00, 3.00, 7.00), "Blanco": (5.00, 7.50, 4.50, 8.00), "Rosado": (5.00, 7.50, 4.50, 8.00)},
-        "A.V.": {"Tinto": (0.00, 0.60, 0.00, 0.80), "Blanco": (0.00, 0.50, 0.00, 0.65), "Rosado": (0.00, 0.50, 0.00, 0.65)},
-        "SO2 L": {"Tinto": (25.0, 50.0, 15.0, 60.0), "Blanco": (25.0, 50.0, 15.0, 60.0), "Rosado": (25.0, 50.0, 15.0, 60.0)},
-        "SO2 T": {"Tinto": (50.0, 150.0, 30.0, 200.0), "Blanco": (80.0, 200.0, 50.0, 250.0), "Rosado": (80.0, 200.0, 50.0, 250.0)},
-        "MR": {"Tinto": (0.0, 2.5, 0.0, 4.0), "Blanco": (0.0, 4.0, 0.0, 8.0), "Rosado": (0.0, 4.0, 0.0, 8.0)},
-        "NTU": {"Tinto": (0.0, 2.0, 0.0, 5.0), "Blanco": (0.0, 1.5, 0.0, 3.0), "Rosado": (0.0, 1.5, 0.0, 3.0)},
-        "SO2 Mol": {"Tinto": (0.50, 1.50, 0.30, 2.00), "Blanco": (0.50, 1.50, 0.30, 2.00), "Rosado": (0.50, 1.50, 0.30, 2.00)},
+# === BADGE DINAMICO (evaluacion viene de la BD) ===
+def badge_html(label, value, evaluation):
+    eval_styles = {
+        "Normal": ("#e8f5e9", "#2e7d32", "&#10003; Normal"),
+        "Alto": ("#fff3e0", "#e65100", "&#9888; Alto"),
+        "Bajo": ("#fff3e0", "#e65100", "&#9888; Bajo"),
+        "Alerta": ("#f8d7da", "#c62828", "&#9888; Alerta"),
+        "CRITICO": ("#ffebee", "#c62828", "&#10007; CRITICO"),
     }
-    r = ranges.get(name, {}).get(wt)
-    if not r:
-        return f"{value}", "", "#f5f5f5"
-    lo, hi, crit_lo, crit_hi = r
-    if lo <= value <= hi:
-        return f"{value}", "Normal", "#e8f5e9"
-    elif value < crit_lo or value > crit_hi:
-        if value < crit_lo:
-            return f"{value}", "Muy bajo", "#ffebee"
-        return f"{value}", "Critico", "#ffebee"
-    elif value < lo:
-        return f"{value}", "Bajo", "#fff3e0"
-    else:
-        return f"{value}", "Alto", "#fff3e0"
-
-
-def badge_html(label, value, evaluation, bg_color):
-    if value == "-":
-        eval_badge = ""
-    elif evaluation == "Normal":
-        eval_badge = '<span style="color:#2e7d32;font-size:0.75em;">&#10003; Normal</span>'
-    elif evaluation == "Brillante":
-        eval_badge = '<span style="color:#2e7d32;font-size:0.75em;">&#10003; Brillante</span>'
-    elif evaluation in ("Alto", "Bajo"):
-        eval_badge = f'<span style="color:#e65100;font-size:0.75em;">&#9888; {evaluation}</span>'
-    elif evaluation in ("Critico", "Muy bajo"):
-        eval_badge = f'<span style="color:#c62828;font-size:0.75em;">&#10007; {evaluation}</span>'
-    else:
-        eval_badge = f'<span style="color:#666;font-size:0.75em;">{evaluation}</span>' if evaluation else ""
+    bg, color, text = eval_styles.get(evaluation, ("#f5f5f5", "#666", ""))
+    eval_badge = f'<span style="color:{color};font-size:0.75em;">{text}</span>' if evaluation and evaluation != "Sin dato" else ""
 
     return f"""
-    <div style="background:{bg_color};border-radius:6px;padding:8px;text-align:center;min-height:65px;">
+    <div style="background:{bg};border-radius:6px;padding:8px;text-align:center;min-height:65px;">
         <div style="color:#888;font-size:0.7em;text-transform:uppercase;">{label}</div>
         <div style="font-size:1.3em;font-weight:bold;margin:2px 0;">{value}</div>
         {eval_badge}
     </div>"""
 
 
-# === PANEL DETALLE (visible inmediatamente al seleccionar) ===
+# === PANEL DETALLE ===
 if sel_id:
     t = next(x for x in filtered if x["id"] == sel_id)
     tc = TYPE_COLORS.get(t["wine_type"], TYPE_COLORS[""])
     sc = STATE_COLORS.get(t["wine_state"], "#607D8B")
+
+    # Buscar ultimo analisis: por vino si tiene, sino por cuba
+    analysis = None
+    analysis_results = []
+    try:
+        if t["wine_id"]:
+            analysis = queries.get_latest_analysis_for_wine(t["wine_id"])
+        if not analysis:
+            analysis = queries.get_latest_analysis_for_tank(sel_id)
+        if analysis:
+            analysis_results = queries.get_lab_analysis_results(analysis["id"])
+    except Exception:
+        pass
+
+    analysis_date = analysis.get("date", "-") if analysis else "-"
 
     st.markdown(f"""
     <div style="background:linear-gradient(135deg, {tc['light']}, #fff);border-radius:10px;
@@ -235,7 +206,7 @@ if sel_id:
             <div><small style="color:#888;">ESTADO</small><br>
                 <span style="background:{sc};color:white;padding:2px 8px;border-radius:4px;
                       font-size:0.85em;">{t['wine_state'] or 'Sin especificar'}</span></div>
-            <div><small style="color:#888;">ULTIMO ANALISIS</small><br><strong>{t['last_analysis_date'] or '-'}</strong></div>
+            <div><small style="color:#888;">ULTIMO ANALISIS</small><br><strong>{analysis_date}</strong></div>
             <div><small style="color:#888;">FML</small><br><strong>{t['fml'] or '-'}</strong></div>
         </div>
     </div>
@@ -243,47 +214,40 @@ if sel_id:
 
     st.markdown("")
 
-    wt = t["wine_type"] or "Tinto"
-    ph_val, ph_eval, ph_bg = eval_param("pH", t["ph"], wt)
-    at_val, at_eval, at_bg = eval_param("A.T.", t["total_acidity"], wt)
-    av_val, av_eval, av_bg = eval_param("A.V.", t["volatile_acidity"], wt)
-    so2l_val, so2l_eval, so2l_bg = eval_param("SO2 L", t["free_so2"], wt)
-    so2t_val, so2t_eval, so2t_bg = eval_param("SO2 T", t["total_so2"], wt)
-    mr_val, mr_eval, mr_bg = eval_param("MR", t["residual_sugar"], wt)
-    ntu_val, ntu_eval, ntu_bg = eval_param("NTU", t["ntu"], wt)
-    if t["ntu"] is not None and t["ntu"] <= 1.0 and ntu_eval == "Normal":
-        ntu_eval = "Brillante"
-    so2m_val, so2m_eval, so2m_bg = eval_param("SO2 Mol", t["so2_molecular"], wt)
-    alc_val = f"{t['alcohol_degree']}" if t["alcohol_degree"] else "-"
-    color_val = f"{t['color']}" if t["color"] else "-"
-    co2_val = f"{t['co2']}" if t["co2"] else "-"
+    # --- ANALISIS DE LABORATORIO (100% dinamico desde lab_analyses) ---
+    if analysis_results:
+        badges = ""
+        for r in analysis_results:
+            param = r.get("lab_parameters") or {}
+            name = param.get("name", "?")
+            unit = param.get("unit", "")
+            value = r.get("value")
+            evaluation = r.get("evaluation", "")
+            display_val = f"{float(value):.2f}" if value is not None else "-"
+            if unit:
+                name = f"{name} ({unit})"
+            badges += badge_html(name, display_val, evaluation)
 
-    st.markdown(f"""
-    <div style="background:#fff;border-radius:10px;padding:20px;border:1px solid #e0e0e0;">
-        <h4 style="margin:0 0 4px 0;">Analisis de Laboratorio</h4>
-        <div style="color:#888;font-size:0.8em;margin-bottom:12px;">
-            Tipo: {wt} &bull; Estado: {t['wine_state'] or '-'} &bull;
-            Ultimo control: {t['last_analysis_date'] or '-'}
+        stage_txt = analysis.get("stage", "-")
+        analyst_txt = analysis.get("analyst", "-")
+        st.markdown(f"""
+        <div style="background:#fff;border-radius:10px;padding:20px;border:1px solid #e0e0e0;">
+            <h4 style="margin:0 0 4px 0;">Analisis de Laboratorio</h4>
+            <div style="color:#888;font-size:0.8em;margin-bottom:12px;">
+                Fecha: {analysis_date} &bull; Etapa: {stage_txt} &bull;
+                Analista: {analyst_txt}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+                {badges}
+            </div>
         </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-            {badge_html("Grado", alc_val, "", "#f5f5f5")}
-            {badge_html("pH", ph_val, ph_eval, ph_bg)}
-            {badge_html("A.T.", at_val, at_eval, at_bg)}
-            {badge_html("A.V.", av_val, av_eval, av_bg)}
-            {badge_html("SO2 L", so2l_val, so2l_eval, so2l_bg)}
-            {badge_html("SO2 T", so2t_val, so2t_eval, so2t_bg)}
-            {badge_html("MR", mr_val, mr_eval, mr_bg)}
-            {badge_html("CO2", co2_val, "", "#f5f5f5")}
-            {badge_html("NTU", ntu_val, ntu_eval, ntu_bg)}
-            {badge_html("Color", color_val, "", "#f5f5f5")}
-            {badge_html("FML", t['fml'] or '-', "", "#f5f5f5")}
-            {badge_html("SO2 Mol", so2m_val, so2m_eval, so2m_bg)}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Sin analisis de laboratorio registrados para este vino")
 
     st.markdown("")
 
+    # --- GRAFICOS ---
     col_g1, col_g2 = st.columns(2)
     with col_g1:
         pct = t["pct"]
@@ -306,28 +270,34 @@ if sel_id:
         st.plotly_chart(fig, use_container_width=True)
 
     with col_g2:
-        lab_params = []
-        lab_vals = []
-        if t["ph"]: lab_params.append("pH"); lab_vals.append(t["ph"])
-        if t["total_acidity"]: lab_params.append("A.T."); lab_vals.append(t["total_acidity"])
-        if t["volatile_acidity"]: lab_params.append("A.V."); lab_vals.append(t["volatile_acidity"])
-        if t["free_so2"]: lab_params.append("SO2 L"); lab_vals.append(t["free_so2"] / 10)
-        if t["total_so2"]: lab_params.append("SO2 T"); lab_vals.append(t["total_so2"] / 10)
-        if t["residual_sugar"]: lab_params.append("MR"); lab_vals.append(t["residual_sugar"])
-        if t["so2_molecular"]: lab_params.append("SO2 Mol"); lab_vals.append(t["so2_molecular"])
+        if analysis_results:
+            radar_names = []
+            radar_vals = []
+            for r in analysis_results:
+                param = r.get("lab_parameters") or {}
+                value = r.get("value")
+                min_n = param.get("min_normal")
+                max_n = param.get("max_normal")
+                if value is not None and min_n is not None and max_n is not None:
+                    rng = float(max_n) - float(min_n)
+                    if rng > 0:
+                        normalized = (float(value) - float(min_n)) / rng * 10
+                        radar_names.append(param.get("name", "?"))
+                        radar_vals.append(round(normalized, 1))
 
-        if lab_params:
-            fig = go.Figure(go.Scatterpolar(
-                r=lab_vals, theta=lab_params, fill="toself",
-                line_color=tc["fill"],
-            ))
-            fig.update_layout(
-                polar=dict(radialaxis=dict(visible=True)),
-                height=220, margin=dict(t=40, b=10, l=40, r=40),
-                title="Perfil Analitico",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            if len(radar_names) >= 3:
+                fig = go.Figure(go.Scatterpolar(
+                    r=radar_vals, theta=radar_names, fill="toself",
+                    line_color=tc["fill"],
+                ))
+                fig.update_layout(
+                    polar=dict(radialaxis=dict(visible=True, range=[0, 15])),
+                    height=220, margin=dict(t=40, b=10, l=40, r=40),
+                    title="Perfil Analitico (normalizado)",
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
+    # --- OTs RECIENTES ---
     try:
         ots = queries.get_work_orders_by_tank(sel_id, limit=10)
     except Exception:
