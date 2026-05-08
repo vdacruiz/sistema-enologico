@@ -354,63 +354,106 @@ if sel_id:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # --- Todas las OTs del vino ---
+            # --- Todas las OTs del vino con detalle ---
             try:
                 wine_ots = queries.get_work_orders_by_wine(t["wine_id"])
             except Exception:
                 wine_ots = []
 
             if wine_ots:
-                st.markdown(f"**Historial de Operaciones** ({len(wine_ots)} OTs)")
+                st.markdown(f"**Historial Completo de Operaciones** ({len(wine_ots)} OTs)")
 
-                timeline_rows = []
                 for ot in wine_ots:
                     proc = ot.get("winemaking_processes") or {}
                     worker = ot.get("workers") or {}
                     ot_type = ot.get("ot_type", "Insumos")
+                    ot_status = ot.get("status", "-")
+                    ot_num = ot.get("ot_number", "?")
+                    ot_date = ot.get("date", "-")
+                    ot_liters = ot.get("liters") or "-"
+                    obs = ot.get("observations") or ""
 
                     src_tank = ot.get("tanks!work_orders_source_tank_id_fkey") or ot.get("tanks", {})
                     dst_tank = ot.get("tanks!work_orders_dest_tank_id_fkey") or {}
                     src_code = src_tank.get("code", "-") if isinstance(src_tank, dict) else "-"
                     dst_code = dst_tank.get("code", "-") if isinstance(dst_tank, dict) else "-"
 
-                    cubas_txt = ""
-                    if ot_type == "Movimiento":
-                        cubas_txt = f"{src_code} → {dst_code}"
-                    elif src_code != "-":
-                        cubas_txt = src_code
+                    proc_name = proc.get("name", "-") if isinstance(proc, dict) else "-"
+                    worker_name = worker.get("full_name", "-") if isinstance(worker, dict) else "-"
 
-                    timeline_rows.append({
-                        "Fecha": ot.get("date", "-"),
-                        "OT": ot.get("ot_number", "?"),
-                        "Tipo": ot_type,
-                        "Operacion": proc.get("name", "-") if isinstance(proc, dict) else "-",
-                        "Cubas": cubas_txt,
-                        "Litros": ot.get("liters") or "-",
-                        "Operario": worker.get("full_name", "-") if isinstance(worker, dict) else "-",
-                        "Estado": ot.get("status", "-"),
-                        "Obs.": (ot.get("observations") or "-")[:50],
-                    })
-
-                df_trace = pd.DataFrame(timeline_rows)
-
-                def color_trace_status(val):
-                    colors = {
-                        "Pendiente": "background-color: #fef3c7; color: #92400e",
-                        "En Proceso": "background-color: #dbeafe; color: #1e40af",
-                        "Completada": "background-color: #d1fae5; color: #065f46",
-                        "Anulada": "background-color: #f3f4f6; color: #4b5563",
+                    status_colors = {
+                        "Completada": ("#d1fae5", "#065f46", "#059669"),
+                        "Pendiente": ("#fef3c7", "#92400e", "#d97706"),
+                        "En Proceso": ("#dbeafe", "#1e40af", "#2563eb"),
+                        "Anulada": ("#f3f4f6", "#4b5563", "#6b7280"),
                     }
-                    return colors.get(val, "")
+                    s_bg, s_text, s_border = status_colors.get(ot_status, ("#f3f4f6", "#4b5563", "#6b7280"))
+                    type_icon = "&#128230;" if ot_type == "Insumos" else "&#127858;"
 
-                def color_trace_type(val):
-                    return "background-color: #dbeafe; color: #1e40af" if val == "Movimiento" else "background-color: #f0fdf4; color: #166534"
+                    if ot_type == "Movimiento":
+                        cubas_html = f"<strong>Cuba {src_code}</strong> &#10132; <strong>Cuba {dst_code}</strong> | {ot_liters} L"
+                    else:
+                        cubas_html = f"<strong>Cuba {src_code}</strong>" if src_code != "-" else ""
 
-                st.dataframe(
-                    df_trace.style.map(color_trace_status, subset=["Estado"])
-                                  .map(color_trace_type, subset=["Tipo"]),
-                    use_container_width=True, hide_index=True, height=400,
-                )
+                    # Cargar lineas de insumos
+                    ot_lines_html = ""
+                    if ot_type == "Insumos" and ot_status == "Completada":
+                        try:
+                            ot_lines = queries.get_work_order_lines(ot["id"])
+                            if ot_lines:
+                                items = []
+                                for ln in ot_lines:
+                                    sup = (ln.get("supplies") or {})
+                                    sup_name = sup.get("name", "?")
+                                    sup_unit = sup.get("unit", "")
+                                    qty = ln.get("quantity", 0) or 0
+                                    lot = (ln.get("supply_lots") or {})
+                                    lot_num = lot.get("lot_number", "-") if isinstance(lot, dict) else "-"
+                                    if qty > 0:
+                                        items.append(
+                                            f'<div style="display:flex;justify-content:space-between;padding:4px 0;'
+                                            f'border-bottom:1px solid #f3f4f6;">'
+                                            f'<span>{sup_name}</span>'
+                                            f'<span style="color:#1e40af;font-weight:600;">{qty:.2f} {sup_unit} '
+                                            f'<span style="color:#6b7280;font-weight:400;">Lote: {lot_num}</span></span>'
+                                            f'</div>'
+                                        )
+                                if items:
+                                    ot_lines_html = (
+                                        '<div style="margin-top:8px;padding:10px 12px;background:#f9fafb;'
+                                        'border-radius:6px;border:1px solid #e5e7eb;">'
+                                        '<div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;'
+                                        'letter-spacing:0.05em;margin-bottom:6px;">Insumos aplicados</div>'
+                                        + "".join(items) + '</div>'
+                                    )
+                        except Exception:
+                            pass
+
+                    obs_html = ""
+                    if obs:
+                        obs_html = f'<div style="margin-top:6px;font-size:0.82rem;color:#6b7280;font-style:italic;">Obs: {obs[:100]}</div>'
+
+                    st.markdown(f"""
+                    <div style="background:white;border-radius:10px;padding:14px 18px;margin-bottom:8px;
+                                border-left:4px solid {s_border};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <span style="font-weight:700;color:#1e1e2f;">OT #{ot_num}</span>
+                                <span style="background:{s_bg};color:{s_text};padding:2px 8px;border-radius:12px;
+                                      font-size:0.72rem;font-weight:600;margin-left:6px;">{ot_status}</span>
+                                <span style="color:#6b7280;font-size:0.8rem;margin-left:8px;">{type_icon} {ot_type}</span>
+                            </div>
+                            <span style="color:#6b7280;font-size:0.82rem;">{ot_date}</span>
+                        </div>
+                        <div style="margin-top:8px;display:flex;gap:16px;font-size:0.88rem;color:#374151;">
+                            <span><strong>Operacion:</strong> {proc_name}</span>
+                            <span>{cubas_html}</span>
+                            <span><strong>Operario:</strong> {worker_name}</span>
+                        </div>
+                        {ot_lines_html}
+                        {obs_html}
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
                 st.info("Sin operaciones registradas para este vino")
 

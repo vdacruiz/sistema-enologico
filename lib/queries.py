@@ -93,7 +93,7 @@ def get_work_orders(limit=50):
 
 def get_work_order_lines(work_order_id: int):
     return (get_supabase_client().table("work_order_lines")
-            .select("*, supplies(name, code, unit)")
+            .select("*, supplies(name, code, unit), supply_lots(lot_number, expiry_date)")
             .eq("work_order_id", work_order_id)
             .execute().data)
 
