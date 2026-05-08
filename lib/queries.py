@@ -229,8 +229,31 @@ def get_tanks():
 
 def get_tank_contents():
     return (get_supabase_client().table("tank_contents")
-            .select("*, tanks(code, name, capacity_liters), wines(code), grape_varieties(code, name)")
+            .select("*, tanks(code, name, capacity_liters), wines(code), grape_varieties(code, name), product_lines(name)")
             .execute().data)
+
+
+def get_work_orders_by_tank(tank_id: int, limit=20):
+    q1 = (get_supabase_client().table("work_orders")
+          .select("id, ot_number, date, status, ot_type, liters, winemaking_processes(name), wines(code)")
+          .eq("source_tank_id", tank_id)
+          .order("date", desc=True)
+          .limit(limit)
+          .execute().data)
+    q2 = (get_supabase_client().table("work_orders")
+          .select("id, ot_number, date, status, ot_type, liters, winemaking_processes(name), wines(code)")
+          .eq("dest_tank_id", tank_id)
+          .order("date", desc=True)
+          .limit(limit)
+          .execute().data)
+    seen = set()
+    combined = []
+    for ot in q1 + q2:
+        if ot["id"] not in seen:
+            seen.add(ot["id"])
+            combined.append(ot)
+    combined.sort(key=lambda x: x.get("date", ""), reverse=True)
+    return combined[:limit]
 
 
 # ============================================================
