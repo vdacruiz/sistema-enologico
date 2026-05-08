@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+from datetime import datetime
 from lib import queries
+from lib.auth import has_permission
 
 st.title("Stock de Cubas")
 
@@ -49,6 +51,10 @@ for t in tanks:
         "wine_state": wine_state or "",
         "vintage_year": c.get("vintage_year") if c else None,
         "fml": c.get("fml") if c else None,
+        "apto_envasado": c.get("apto_envasado", False) if c else False,
+        "apto_envasado_at": c.get("apto_envasado_at") if c else None,
+        "apto_envasado_by": c.get("apto_envasado_by") if c else None,
+        "content_id": c.get("id") if c else None,
     })
 
 TYPE_COLORS = {
@@ -208,9 +214,44 @@ if sel_id:
                       font-size:0.85em;">{t['wine_state'] or 'Sin especificar'}</span></div>
             <div><small style="color:#888;">ULTIMO ANALISIS</small><br><strong>{analysis_date}</strong></div>
             <div><small style="color:#888;">FML</small><br><strong>{t['fml'] or '-'}</strong></div>
+            <div><small style="color:#888;">ENVASADO</small><br>
+                {"<span style='background:#059669;color:white;padding:3px 10px;border-radius:4px;font-size:0.85em;font-weight:600;'>APTO</span>" if t['apto_envasado'] else "<span style='background:#6b7280;color:white;padding:3px 10px;border-radius:4px;font-size:0.85em;'>No aprobado</span>"}
+            </div>
         </div>
+        {"<div style='margin-top:10px;padding:8px 12px;background:#d1fae5;border-radius:6px;border:1px solid #6ee7b7;font-size:0.85rem;color:#065f46;'><strong>Aprobado para envasado</strong> por " + str(t['apto_envasado_by'] or '-') + " el " + str(t['apto_envasado_at'] or '-')[:10] + "</div>" if t['apto_envasado'] else ""}
     </div>
     """, unsafe_allow_html=True)
+
+    # --- APROBAR / REVOCAR ENVASADO ---
+    if t["wine_id"] and t["liters"] > 0 and has_permission("laboratorio", "ver"):
+        if not t["apto_envasado"]:
+            if st.button("Aprobar para Envasado", key="btn_aprobar_env", type="primary"):
+                try:
+                    from lib.auth import get_current_user as get_user
+                    current = get_user()
+                    queries.get_supabase_client().table("tank_contents").update({
+                        "apto_envasado": True,
+                        "apto_envasado_at": datetime.now().isoformat(),
+                        "apto_envasado_by": current.get("full_name", "?"),
+                    }).eq("id", t["content_id"]).execute()
+                    st.success("Vino aprobado para envasado")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+        else:
+            if st.button("Revocar aprobacion de envasado", key="btn_revocar_env"):
+                try:
+                    queries.get_supabase_client().table("tank_contents").update({
+                        "apto_envasado": False,
+                        "apto_envasado_at": None,
+                        "apto_envasado_by": None,
+                    }).eq("id", t["content_id"]).execute()
+                    st.warning("Aprobacion revocada")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     st.markdown("")
 

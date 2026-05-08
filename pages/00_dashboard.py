@@ -367,6 +367,53 @@ else:
 st.markdown("<div class='vda-divider'></div>", unsafe_allow_html=True)
 
 # ============================================================
+# VINOS APTOS PARA ENVASADO
+# ============================================================
+
+aptos = [c for c in contents if c.get("apto_envasado")]
+if aptos:
+    st.markdown(f'<div class="vda-section-title">Vinos Aptos para Envasado &mdash; {len(aptos)} cubas</div>', unsafe_allow_html=True)
+
+    apto_html = ""
+    for a in aptos:
+        tank_id = a.get("tank_id")
+        tank_obj = next((tk for tk in tanks if tk["id"] == tank_id), {})
+        tank_code = tank_obj.get("code", "?")
+        wine = (a.get("wines") or {})
+        wine_code = wine.get("code", "-") if isinstance(wine, dict) else "-"
+        grape = (a.get("grape_varieties") or {})
+        grape_code = grape.get("code", "-") if isinstance(grape, dict) else "-"
+        liters_a = a.get("current_liters", 0) or 0
+        approved_by = a.get("apto_envasado_by", "-")
+        approved_at = str(a.get("apto_envasado_at", "-"))[:10]
+
+        apto_html += f"""
+        <div style="display:flex;justify-content:space-between;align-items:center;
+                    padding:10px 14px;margin:4px 0;border-radius:8px;background:#f0fdf4;
+                    border-left:4px solid #059669;">
+            <div>
+                <strong style="font-size:0.95rem;">Cuba {tank_code}</strong>
+                <span style="color:#6b7280;margin:0 8px;">|</span>
+                <span style="font-weight:600;color:#1e1e2f;">{wine_code}</span>
+                <span style="color:#6b7280;margin:0 8px;">|</span>
+                <span>{grape_code}</span>
+                <span style="color:#6b7280;margin:0 8px;">|</span>
+                <span style="font-weight:600;">{liters_a:,.0f} L</span>
+            </div>
+            <div style="text-align:right;">
+                <span class="vda-badge vda-badge-success">APTO ENVASADO</span>
+                <div style="font-size:0.72rem;color:#6b7280;margin-top:2px;">
+                    Aprobado por {approved_by} — {approved_at}
+                </div>
+            </div>
+        </div>
+        """
+
+    st.markdown(f'<div class="vda-card" style="border-top:3px solid #059669;">{apto_html}</div>',
+                unsafe_allow_html=True)
+    st.markdown("<div class='vda-divider'></div>", unsafe_allow_html=True)
+
+# ============================================================
 # RESUMEN STOCK INSUMOS
 # ============================================================
 
