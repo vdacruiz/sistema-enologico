@@ -56,6 +56,7 @@ valid["variedad"] = valid["Variedad"].astype(str).str.strip()
 valid["tipo"] = valid["Tipo"].astype(str).str.strip()
 valid["litros"] = pd.to_numeric(valid[litros_col], errors="coerce").fillna(0)
 valid["estado_xl"] = valid[estado_col].astype(str).str.strip() if estado_col in valid.columns else "nan"
+valid["envasado"] = valid["Envasado"].astype(str).str.strip() if "Envasado" in valid.columns else "nan"
 
 to_insert = []
 skipped = []
@@ -76,9 +77,11 @@ for _, row in valid.iterrows():
     codigo = row["codigo"]
     litros = row["litros"]
 
+    apto = row.get("envasado", "").upper() == "SI"
+    estado_vino = row["estado_xl"] if row["estado_xl"] not in ("nan", "None", "") else None
+
     if codigo in EXCLUDE_CODES or re.match(r"^\d{4}-\d{2}", codigo) or re.match(r"^\d{5,}$", codigo):
         if litros > 0:
-            # Cuba con contenido pero sin codigo valido
             cepa_raw = row["variedad"]
             cepa_db = CEPA_MAP.get(cepa_raw, cepa_raw)
             cepa_id = cepa_map.get(cepa_db)
@@ -90,6 +93,8 @@ for _, row in valid.iterrows():
                 "wine_type": tipo if tipo and tipo != "nan" else None,
                 "current_liters": int(litros),
                 "status": "Ocupado" if litros > 0 else "Vacio",
+                "apto_envasado": apto,
+                "wine_state": estado_vino,
             })
         else:
             to_insert.append({
@@ -113,6 +118,8 @@ for _, row in valid.iterrows():
             "wine_type": tipo if tipo and tipo != "nan" else None,
             "current_liters": int(litros),
             "status": "Ocupado" if litros > 0 else "Vacio",
+            "apto_envasado": apto,
+            "wine_state": estado_vino,
         })
         continue
 
@@ -124,6 +131,8 @@ for _, row in valid.iterrows():
         "wine_type": wine["wine_type"],
         "current_liters": int(litros),
         "status": "Ocupado" if litros > 0 else "Vacio",
+        "apto_envasado": apto,
+        "wine_state": estado_vino,
     })
 
 print("A insertar: {}".format(len(to_insert)))
