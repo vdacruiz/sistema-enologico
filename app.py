@@ -11,6 +11,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# --- iOS: icono home screen + comportamiento app ---
+st.markdown("""
+<link rel="apple-touch-icon" sizes="180x180" href="app/static/logo_vda.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="VDA Enologico">
+""", unsafe_allow_html=True)
+
 # --- Estilos profesionales tipo ERP ---
 st.markdown("""
 <style>
