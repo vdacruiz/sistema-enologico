@@ -514,60 +514,121 @@ with tab_ficha:
             except Exception:
                 pass
 
-        # --- Mapear keywords de insumos a categorias del Excel ---
-        treatment_categories = {
-            "Enzima": ["enzima", "enzimatica"],
-            "Gelatina": ["gelatina"],
-            "Bentonita": ["bentonita"],
-            "CMC / Zenith": ["cmc", "zenith"],
-            "BIC": ["bic", "bicarbonato"],
-            "Sulfirex": ["sulfirex"],
-            "Goma": ["goma arabiga", "goma"],
-            "Sorbato": ["sorbato"],
-            "Meta": ["metabisulfito", "meta ", "k2s2o5"],
+        # --- Mapear keywords de insumos/procesos a campo en tank_contents ---
+        treatment_map = {
+            "Enzima": {"field": "enzima", "keywords": ["enzima", "enzimatica"]},
+            "Gelatina": {"field": "gelatina", "keywords": ["gelatina"]},
+            "Bentonita": {"field": "bentonita", "keywords": ["bentonita"]},
+            "CMC / Zenith": {"field": "cmc", "keywords": ["cmc", "zenith"]},
+            "BIC": {"field": "bic", "keywords": ["bic", "bicarbonato"]},
+            "Sulfirex": {"field": "sulfirex", "keywords": ["sulfirex"]},
+            "Goma": {"field": "goma", "keywords": ["goma arabiga", "goma"]},
+            "Sorbato": {"field": "sorbato", "keywords": ["sorbato"]},
+            "Meta": {"field": "meta", "keywords": ["metabisulfito", "meta ", "k2s2o5"]},
         }
 
-        process_categories = {
-            "Frio": ["frio", "estabilizacion frio", "est. tartarica"],
-            "F. Tangencial": ["tangencial"],
-            "Trasiego": ["trasiego"],
-            "Placas": ["placas"],
-            "Envasado": ["envasado"],
+        process_map = {
+            "Frio": {"field": "frio", "keywords": ["frio", "estabilizacion frio", "est. tartarica"]},
+            "F. Tangencial": {"field": "tangencial", "keywords": ["tangencial"]},
+            "Trasiego": {"field": "trasiego", "keywords": ["trasiego"]},
+            "Placas": {"field": "placas", "keywords": ["placas"]},
         }
 
         def match_category(name, keywords):
             name_lower = name.lower()
             return any(kw in name_lower for kw in keywords)
 
+        def _collect_all_tank_data(wine_id):
+            all_tanks = [w for w in ref["wines_in_tanks"] if (w.get("wines") or {}).get("id") == wine_id]
+            merged = {}
+            for t in ["enzima", "gelatina", "bentonita", "frio", "meta", "cmc",
+                       "bic", "tangencial", "trasiego", "placas", "sulfirex", "goma", "sorbato"]:
+                has_any = False
+                all_dates = []
+                all_ots = set()
+                for tk in all_tanks:
+                    if tk.get(f"has_{t}"):
+                        has_any = True
+                    d = tk.get(f"{t}_date")
+                    if d:
+                        all_dates.append(str(d))
+                    ots_str = tk.get(f"{t}_ots") or ""
+                    for o in ots_str.split(","):
+                        o = o.strip()
+                        if o:
+                            all_ots.add(o)
+                merged[t] = {
+                    "has": has_any,
+                    "date": max(all_dates) if all_dates else None,
+                    "ots": sorted(all_ots, key=lambda x: int(x) if x.isdigit() else 0),
+                }
+            return merged
+
+        tank_treatments = _collect_all_tank_data(ficha_wine_id)
+
+        def _render_card(cat_name, field, ot_from_system, is_process=False):
+            tc = tank_treatments.get(field, {})
+            has_historic = tc.get("has", False)
+            historic_ots = tc.get("ots", [])
+            historic_date = tc.get("date")
+
+            system_ots = []
+            system_detail = ""
+            for entry in (ot_from_system or []):
+                system_ots.append(str(entry.get("ot", "")))
+
+            all_ots = sorted(
+                set(historic_ots) | set(system_ots),
+                key=lambda x: int(x) if x.isdigit() else 0
+            )
+
+            is_applied = has_historic or len(system_ots) > 0
+
+            if is_applied:
+                ots_display = ", ".join(all_ots) if all_ots else "-"
+                date_display = historic_date or ""
+                if system_ots:
+                    sys_dates = [e.get("date", "") for e in (ot_from_system or [])]
+                    latest_sys = max(sys_dates) if sys_dates else ""
+                    if latest_sys and (not date_display or latest_sys > date_display):
+                        date_display = latest_sys
+                bg = "#dbeafe" if is_process else "#d1fae5"
+                border = "#93c5fd" if is_process else "#6ee7b7"
+                badge_bg = "#2563eb" if is_process else "#059669"
+                text_color = "#1e40af" if is_process else "#065f46"
+                ots_wrapped = ots_display
+                if len(ots_display) > 60:
+                    ots_wrapped = ots_display[:60] + "..."
+                return (
+                    f'<div style="background:{bg};border-radius:8px;padding:10px 12px;border:1px solid {border};">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<strong>{cat_name}</strong>'
+                    f'<span style="background:{badge_bg};color:white;padding:2px 8px;border-radius:10px;'
+                    f'font-size:0.75rem;font-weight:600;">SI</span></div>'
+                    f'<div style="font-size:0.78rem;color:{text_color};margin-top:4px;">'
+                    f'{date_display} | {len(all_ots)} OTs</div>'
+                    f'<div style="font-size:0.7rem;color:{text_color};margin-top:2px;word-break:break-all;" '
+                    f'title="{ots_display}">OT: {ots_wrapped}</div></div>'
+                )
+            else:
+                return (
+                    f'<div style="background:#f3f4f6;border-radius:8px;padding:10px 12px;border:1px solid #e5e7eb;">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<strong style="color:#6b7280;">{cat_name}</strong>'
+                    f'<span style="background:#d1d5db;color:#6b7280;padding:2px 8px;border-radius:10px;'
+                    f'font-size:0.75rem;">NO</span></div></div>'
+                )
+
         # --- SECCION 1: Tratamientos (Insumos) ---
         st.markdown("### Tratamientos Aplicados (Insumos)")
 
         treat_html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">'
-        for cat_name, keywords in treatment_categories.items():
-            found = []
+        for cat_name, info in treatment_map.items():
+            ot_matches = []
             for sup_name, applications in supplies_applied.items():
-                if match_category(sup_name, keywords):
-                    found.extend(applications)
-            if found:
-                total_qty = sum(a["qty"] for a in found)
-                last_date = max(a["date"] for a in found)
-                unit = found[0]["unit"]
-                ot_nums = ", ".join(f'#{a["ot"]}' for a in found)
-                treat_html += (
-                    f'<div style="background:#d1fae5;border-radius:8px;padding:10px 12px;border:1px solid #6ee7b7;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<strong>{cat_name}</strong>'
-                    f'<span style="background:#059669;color:white;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;">SI</span></div>'
-                    f'<div style="font-size:0.8rem;color:#065f46;margin-top:4px;">'
-                    f'{total_qty:.2f} {unit} | {last_date} | OT {ot_nums}</div></div>'
-                )
-            else:
-                treat_html += (
-                    f'<div style="background:#f3f4f6;border-radius:8px;padding:10px 12px;border:1px solid #e5e7eb;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<strong style="color:#6b7280;">{cat_name}</strong>'
-                    f'<span style="background:#d1d5db;color:#6b7280;padding:2px 8px;border-radius:10px;font-size:0.75rem;">NO</span></div></div>'
-                )
+                if match_category(sup_name, info["keywords"]):
+                    ot_matches.extend(applications)
+            treat_html += _render_card(cat_name, info["field"], ot_matches)
         treat_html += '</div>'
         st.markdown(treat_html, unsafe_allow_html=True)
 
@@ -575,28 +636,12 @@ with tab_ficha:
         st.markdown("### Procesos Enologicos")
 
         proc_html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">'
-        for cat_name, keywords in process_categories.items():
-            found = None
-            for proc_name, info in processes_applied.items():
-                if match_category(proc_name, keywords):
-                    found = info
-                    break
-            if found:
-                proc_html += (
-                    f'<div style="background:#dbeafe;border-radius:8px;padding:10px 12px;border:1px solid #93c5fd;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<strong>{cat_name}</strong>'
-                    f'<span style="background:#2563eb;color:white;padding:2px 8px;border-radius:10px;font-size:0.75rem;font-weight:600;">SI</span></div>'
-                    f'<div style="font-size:0.8rem;color:#1e40af;margin-top:4px;">'
-                    f'{found["date"]} | OT #{found["ot"]} | {found["worker"]}</div></div>'
-                )
-            else:
-                proc_html += (
-                    f'<div style="background:#f3f4f6;border-radius:8px;padding:10px 12px;border:1px solid #e5e7eb;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<strong style="color:#6b7280;">{cat_name}</strong>'
-                    f'<span style="background:#d1d5db;color:#6b7280;padding:2px 8px;border-radius:10px;font-size:0.75rem;">NO</span></div></div>'
-                )
+        for cat_name, info in process_map.items():
+            ot_matches = []
+            for proc_name, proc_info in processes_applied.items():
+                if match_category(proc_name, info["keywords"]):
+                    ot_matches.append(proc_info)
+            proc_html += _render_card(cat_name, info["field"], ot_matches, is_process=True)
         proc_html += '</div>'
         st.markdown(proc_html, unsafe_allow_html=True)
 
@@ -672,6 +717,53 @@ with tab_ficha:
                                 update_data["blend_notes"] = new_blend
                             get_supabase_client().table("tank_contents").update(update_data).eq("id", tc_row["id"]).execute()
                             st.success("Tests actualizados")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+
+        # --- Editar tratamientos (carga historica) ---
+        if has_permission("laboratorio", "ver"):
+            with st.expander("Registrar / Editar Tratamientos Historicos"):
+                tc_row_t = content_map.get(wt_data["tank_id"])
+                if tc_row_t:
+                    treat_fields = [
+                        ("Enzima", "enzima"), ("Gelatina", "gelatina"), ("Bentonita", "bentonita"),
+                        ("Frio", "frio"), ("Meta", "meta"), ("CMC / Zenith", "cmc"),
+                        ("BIC", "bic"), ("F. Tangencial", "tangencial"), ("Trasiego", "trasiego"),
+                        ("Placas", "placas"), ("Sulfirex", "sulfirex"), ("Goma", "goma"),
+                        ("Sorbato", "sorbato"),
+                    ]
+                    treat_update = {}
+                    for i in range(0, len(treat_fields), 2):
+                        cols = st.columns(2)
+                        for j, col in enumerate(cols):
+                            idx = i + j
+                            if idx >= len(treat_fields):
+                                break
+                            label, field = treat_fields[idx]
+                            with col:
+                                current_has = wt_data.get(f"has_{field}", False)
+                                current_ots = wt_data.get(f"{field}_ots") or ""
+                                current_date = wt_data.get(f"{field}_date")
+                                new_has = st.checkbox(f"{label}", value=current_has, key=f"treat_{field}")
+                                new_ots = st.text_input(f"OTs {label}", value=current_ots,
+                                                        key=f"treat_{field}_ots",
+                                                        placeholder="19847,19955,19962...")
+                                treat_update[f"has_{field}"] = new_has
+                                if new_ots:
+                                    treat_update[f"{field}_ots"] = new_ots
+
+                    new_sorbato_dosis = st.text_input("Dosis Sorbato",
+                                                       value=wt_data.get("sorbato_dosis") or "",
+                                                       key="treat_sorbato_dosis")
+                    if new_sorbato_dosis:
+                        treat_update["sorbato_dosis"] = new_sorbato_dosis
+
+                    if st.button("Guardar Tratamientos", type="primary", key="ficha_save_treats"):
+                        try:
+                            get_supabase_client().table("tank_contents").update(treat_update).eq("id", tc_row_t["id"]).execute()
+                            st.success("Tratamientos actualizados")
                             st.cache_data.clear()
                             st.rerun()
                         except Exception as e:

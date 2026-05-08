@@ -148,6 +148,34 @@ def update_work_order_line(line_id: int, data: dict):
             .update(data).eq("id", line_id).execute().data)
 
 
+def _merge_ot_lists(src_ots: str, dst_ots: str) -> str:
+    src_set = {x.strip() for x in (src_ots or "").split(",") if x.strip()}
+    dst_set = {x.strip() for x in (dst_ots or "").split(",") if x.strip()}
+    merged = sorted(dst_set | src_set, key=lambda x: int(x) if x.isdigit() else 0)
+    return ",".join(merged) if merged else None
+
+
+def _merge_treatments(update: dict, src_data: dict, dst_data: dict):
+    treatments = ["enzima", "gelatina", "bentonita", "frio", "meta", "cmc",
+                   "bic", "tangencial", "trasiego", "placas", "sulfirex", "goma", "sorbato"]
+    for t in treatments:
+        src_has = src_data.get(f"has_{t}", False)
+        dst_has = dst_data.get(f"has_{t}", False)
+        if src_has or dst_has:
+            update[f"has_{t}"] = True
+            src_date = src_data.get(f"{t}_date")
+            dst_date = dst_data.get(f"{t}_date")
+            if src_date and dst_date:
+                update[f"{t}_date"] = max(str(src_date), str(dst_date))
+            else:
+                update[f"{t}_date"] = src_date or dst_date
+            merged_ots = _merge_ot_lists(src_data.get(f"{t}_ots"), dst_data.get(f"{t}_ots"))
+            if merged_ots:
+                update[f"{t}_ots"] = merged_ots
+    if src_data.get("sorbato_dosis") and not dst_data.get("sorbato_dosis"):
+        update["sorbato_dosis"] = src_data["sorbato_dosis"]
+
+
 def complete_movement_ot(ot: dict):
     from datetime import date as _date
     client = get_supabase_client()
@@ -219,6 +247,12 @@ def complete_movement_ot(ot: dict):
             update["fecha_ac"] = None
             update["control_mensual_date"] = None
             update["blend_notes"] = None
+            for _t in ["enzima", "gelatina", "bentonita", "frio", "meta", "cmc",
+                       "bic", "tangencial", "trasiego", "placas", "sulfirex", "goma", "sorbato"]:
+                update[f"has_{_t}"] = False
+                update[f"{_t}_date"] = None
+                update[f"{_t}_ots"] = None
+            update["sorbato_dosis"] = None
             update["last_operation"] = "Vaciada por OT"
         else:
             update["last_operation"] = f"Traspaso salida {liters:.0f} L"
@@ -239,6 +273,19 @@ def complete_movement_ot(ot: dict):
         "so2_molecular", "ntu", "color", "co2",
         "test_color_4", "test_color_4_date", "test_tartarica_neg4",
         "test_tartarica_neg4_date", "fecha_ac", "control_mensual_date", "blend_notes",
+        "has_enzima", "enzima_date", "enzima_ots",
+        "has_gelatina", "gelatina_date", "gelatina_ots",
+        "has_bentonita", "bentonita_date", "bentonita_ots",
+        "has_frio", "frio_date", "frio_ots",
+        "has_meta", "meta_date", "meta_ots",
+        "has_cmc", "cmc_date", "cmc_ots",
+        "has_bic", "bic_date", "bic_ots",
+        "has_tangencial", "tangencial_date", "tangencial_ots",
+        "has_trasiego", "trasiego_date", "trasiego_ots",
+        "has_placas", "placas_date", "placas_ots",
+        "has_sulfirex", "sulfirex_date", "sulfirex_ots",
+        "has_goma", "goma_date", "goma_ots",
+        "has_sorbato", "sorbato_date", "sorbato_ots", "sorbato_dosis",
     ]
     lab_copy = {}
     for f in lab_fields:
@@ -260,6 +307,8 @@ def complete_movement_ot(ot: dict):
             if not dst.get("wine_id"):
                 update.update(copy_fields)
                 update.update(lab_copy)
+            else:
+                _merge_treatments(update, src_data, dst)
             client.table("tank_contents").update(update).eq("id", dst["id"]).execute()
         else:
             insert = {
@@ -611,8 +660,22 @@ def get_wines_in_tanks():
                         "fml, vintage_year, "
                         "test_color_4, test_color_4_date, test_tartarica_neg4, test_tartarica_neg4_date, "
                         "fecha_ac, control_mensual_date, blend_notes, "
+                        "has_enzima, enzima_date, enzima_ots, "
+                        "has_gelatina, gelatina_date, gelatina_ots, "
+                        "has_bentonita, bentonita_date, bentonita_ots, "
+                        "has_frio, frio_date, frio_ots, "
+                        "has_meta, meta_date, meta_ots, "
+                        "has_cmc, cmc_date, cmc_ots, "
+                        "has_bic, bic_date, bic_ots, "
+                        "has_tangencial, tangencial_date, tangencial_ots, "
+                        "has_trasiego, trasiego_date, trasiego_ots, "
+                        "has_placas, placas_date, placas_ots, "
+                        "has_sulfirex, sulfirex_date, sulfirex_ots, "
+                        "has_goma, goma_date, goma_ots, "
+                        "has_sorbato, sorbato_date, sorbato_ots, sorbato_dosis, "
                         "tanks(id, code), wines(id, code), grape_varieties(code, name)")
                 .not_.is_("wine_id", "null")
+                .gt("current_liters", 0)
                 .order("tank_id")
                 .execute().data)
     return contents
