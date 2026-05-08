@@ -308,7 +308,13 @@ with tab_crear:
         source_tanks = [t for t in ref["tanks"]
                         if content_by_tank.get(t["id"], {}).get("wine_id") == wine_id
                         and (content_by_tank.get(t["id"], {}).get("current_liters", 0) or 0) > 0]
-        if not source_tanks:
+        total_wine_liters = sum(
+            content_by_tank.get(t["id"], {}).get("current_liters", 0) or 0
+            for t in source_tanks
+        )
+        if source_tanks:
+            st.info(f"Este vino tiene **{total_wine_liters:,.0f} L** en **{len(source_tanks)} cuba{'s' if len(source_tanks) > 1 else ''}**")
+        else:
             st.warning("No hay cubas con este vino. Verifique el codigo de vino seleccionado.")
     else:
         source_tanks = ref["tanks"]
@@ -330,14 +336,29 @@ with tab_crear:
 
     with col_t2:
         if is_movement:
-            dest_tanks = [t for t in ref["tanks"] if t["id"] != source_tank_id]
+            dest_empty = []
+            dest_occupied = []
+            for t in ref["tanks"]:
+                if t["id"] == source_tank_id:
+                    continue
+                c = content_by_tank.get(t["id"], {})
+                status = c.get("status", "Vacio")
+                if status == "Vacio" or not c.get("current_liters"):
+                    dest_empty.append(t)
+                else:
+                    dest_occupied.append(t)
+            dest_tanks_sorted = dest_empty + dest_occupied
             dest_options = {}
-            for t in dest_tanks:
+            for t in dest_tanks_sorted:
                 c = content_by_tank.get(t["id"], {})
                 status = c.get("status", "Vacio")
                 lts = c.get("current_liters", 0) or 0
-                cepa_c = (c.get("grape_varieties") or {}).get("code", "")
-                tag = "Vacia" if status == "Vacio" else f"{lts:,.0f} L {cepa_c}"
+                wine_c = (c.get("wines") or {}).get("code", "")
+                cap = next((tk.get("capacity_liters", 0) or 0 for tk in ref["tanks"] if tk["id"] == t["id"]), 0)
+                if status == "Vacio" or not lts:
+                    tag = f"Vacia — Cap. {cap:,.0f} L" if cap else "Vacia"
+                else:
+                    tag = f"{lts:,.0f} L — {wine_c}" if wine_c else f"{lts:,.0f} L"
                 dest_options[t["id"]] = f"Cuba {t['code']} — {tag}"
         else:
             dest_options = {t["id"]: f"Cuba {t['code']}" for t in ref["tanks"]}
@@ -346,12 +367,13 @@ with tab_crear:
                                     index=None, placeholder="Seleccione...", key="new_dst_tank")
 
     with col_t3:
-        max_liters = 0
-        if is_movement and source_tank_id:
+        if source_tank_id:
             src_content = content_by_tank.get(source_tank_id, {})
             max_liters = int(src_content.get("current_liters", 0) or 0)
-            st.caption(f"Disponible: {max_liters:,} L")
-        liters = st.number_input("Litros", value=0, min_value=0, step=100, key="new_liters")
+            if max_liters > 0:
+                st.caption(f"Disponible en cuba: {max_liters:,} L")
+        liters = st.number_input("Litros a traspasar" if is_movement else "Litros",
+                                 value=0, min_value=0, step=100, key="new_liters")
     with col_t4:
         priority = st.selectbox("Prioridad", ["Normal", "Urgente"], key="new_priority")
 
