@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from lib.database import get_supabase_client
 
 
@@ -406,7 +406,8 @@ def create_wine_reception(data: dict):
 
 def get_wine_receptions(limit=50):
     return (get_supabase_client().table("wine_receptions")
-            .select("*, grape_varieties(code, name), product_lines(name)")
+            .select("*, grape_varieties(code, name), product_lines(name), "
+                    "suppliers(name), tanks:dest_tank_id(code, name)")
             .order("date", desc=True)
             .limit(limit)
             .execute().data)
@@ -414,15 +415,91 @@ def get_wine_receptions(limit=50):
 
 def get_wine_reception_by_id(reception_id: int):
     return (get_supabase_client().table("wine_receptions")
-            .select("*, grape_varieties(code, name), product_lines(name)")
+            .select("*, grape_varieties(code, name), product_lines(name), "
+                    "suppliers(name), tanks:dest_tank_id(code, name)")
             .eq("id", reception_id)
             .single()
+            .execute().data)
+
+
+def get_wine_receptions_pending_invoice(limit=200):
+    return (get_supabase_client().table("wine_receptions")
+            .select("*, grape_varieties(code, name), product_lines(name), "
+                    "suppliers(name), tanks:dest_tank_id(code, name)")
+            .eq("reception_type", "Compra Vino")
+            .order("date", desc=True)
+            .limit(limit)
             .execute().data)
 
 
 def update_wine_reception(reception_id: int, data: dict):
     return (get_supabase_client().table("wine_receptions")
             .update(data).eq("id", reception_id).execute().data)
+
+
+def get_wine_by_code(code: str):
+    result = (get_supabase_client().table("wines")
+              .select("*").eq("code", code).execute().data)
+    return result[0] if result else None
+
+
+def find_or_create_wine(code: str, grape_variety_id: int, product_line_id: int = None,
+                        wine_type: str = "Tinto", vintage_year: int = None):
+    existing = get_wine_by_code(code)
+    if existing:
+        return existing
+    data = {"code": code, "grape_variety_id": grape_variety_id, "wine_type": wine_type}
+    if product_line_id:
+        data["product_line_id"] = product_line_id
+    if vintage_year:
+        data["vintage_year"] = vintage_year
+    result = get_supabase_client().table("wines").insert(data).execute().data
+    return result[0]
+
+
+def assign_wine_to_tank(tank_id: int, wine_id: int, liters: float,
+                        grape_variety_id: int = None, product_line_id: int = None,
+                        wine_type: str = None, vintage_year: int = None,
+                        alcohol_degree: float = None, so2_total: float = None,
+                        ph: float = None):
+    client = get_supabase_client()
+    existing = client.table("tank_contents").select("id, current_liters, status").eq("tank_id", tank_id).execute().data
+    update_data = {
+        "wine_id": wine_id,
+        "status": "Ocupado",
+        "updated_at": _utcnow(),
+    }
+    if grape_variety_id:
+        update_data["grape_variety_id"] = grape_variety_id
+    if product_line_id:
+        update_data["product_line_id"] = product_line_id
+    if wine_type:
+        update_data["wine_type"] = wine_type
+    if vintage_year:
+        update_data["vintage_year"] = vintage_year
+    if alcohol_degree and alcohol_degree > 0:
+        update_data["alcohol_degree"] = alcohol_degree
+    if so2_total and so2_total > 0:
+        update_data["total_so2"] = so2_total
+    if ph and ph > 0:
+        update_data["ph"] = ph
+
+    if existing:
+        current = existing[0].get("current_liters") or 0
+        update_data["current_liters"] = current + liters
+        client.table("tank_contents").update(update_data).eq("tank_id", tank_id).execute()
+    else:
+        update_data["tank_id"] = tank_id
+        update_data["current_liters"] = liters
+        client.table("tank_contents").insert(update_data).execute()
+
+    client.table("tank_movements").insert({
+        "date": date.today().isoformat(),
+        "dest_tank_id": tank_id,
+        "wine_id": wine_id,
+        "liters": liters,
+        "operation": "Recepcion",
+    }).execute()
 
 
 # ============================================================
