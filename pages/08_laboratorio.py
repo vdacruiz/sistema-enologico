@@ -714,13 +714,27 @@ with tab_envasado:
     if not wines_in_tanks:
         st.info("No hay vinos en cubas actualmente")
     else:
-        env_filter = st.radio("Filtrar:", ["Todos", "Pendientes de aprobacion", "Aprobados"], horizontal=True, key="env_filter")
+        col_env_search, col_env_filter = st.columns([2, 1])
+        with col_env_search:
+            env_search = st.text_input("Buscar vino (codigo, cepa, cuba):", key="env_search", placeholder="Ej: 25/26-071, CS, 104...")
+        with col_env_filter:
+            env_filter = st.radio("Filtrar:", ["Todos", "Pendientes", "Aprobados"], horizontal=True, key="env_filter")
 
         filtered = wines_in_tanks
-        if env_filter == "Pendientes de aprobacion":
-            filtered = [w for w in wines_in_tanks if not w.get("apto_envasado")]
+        if env_filter == "Pendientes":
+            filtered = [w for w in filtered if not w.get("apto_envasado")]
         elif env_filter == "Aprobados":
-            filtered = [w for w in wines_in_tanks if w.get("apto_envasado")]
+            filtered = [w for w in filtered if w.get("apto_envasado")]
+
+        if env_search:
+            s = env_search.lower()
+            filtered = [w for w in filtered if
+                        s in ((w.get("wines") or {}).get("code", "")).lower() or
+                        s in ((w.get("grape_varieties") or {}).get("code", "")).lower() or
+                        s in ((w.get("grape_varieties") or {}).get("name", "")).lower() or
+                        s in ((w.get("tanks") or {}).get("code", "")).lower()]
+
+        st.caption(f"{len(filtered)} vinos encontrados")
 
         if not filtered:
             st.info("Sin resultados para este filtro")
