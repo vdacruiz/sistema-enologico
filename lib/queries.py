@@ -514,7 +514,21 @@ def get_lab_parameters(wine_type: str = None):
     return q.execute().data
 
 
+def get_next_analysis_number():
+    result = (get_supabase_client().table("lab_analyses")
+              .select("analysis_number")
+              .not_.is_("analysis_number", "null")
+              .order("analysis_number", desc=True)
+              .limit(1)
+              .execute().data)
+    if result:
+        return result[0]["analysis_number"] + 1
+    return 1
+
+
 def create_lab_analysis(data: dict):
+    if "analysis_number" not in data:
+        data["analysis_number"] = get_next_analysis_number()
     return get_supabase_client().table("lab_analyses").insert(data).execute().data
 
 

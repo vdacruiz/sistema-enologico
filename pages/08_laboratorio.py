@@ -249,7 +249,8 @@ with tab_nuevo:
                     if tc_row:
                         get_supabase_client().table("tank_contents").update(tc_update).eq("id", tc_row["id"]).execute()
 
-                    st.success(f"Analisis guardado exitosamente (ID: {analysis_id})")
+                    a_num = result[0].get("analysis_number", "?")
+                    st.success(f"Analisis N {a_num} guardado exitosamente")
                     st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
@@ -297,7 +298,7 @@ with tab_historial_vino:
                 tank = a.get("tanks")
                 tank_txt = tank.get("code", "-") if tank else "-"
                 rows.append({
-                    "ID": a["id"],
+                    "N": a.get("analysis_number") or "-",
                     "Fecha": a.get("date", "-"),
                     "Cuba": tank_txt,
                     "Tipo": a.get("wine_type", "-"),
@@ -311,7 +312,8 @@ with tab_historial_vino:
             analysis_options = {}
             for a in analyses:
                 tank = a.get("tanks") or {}
-                analysis_options[a["id"]] = f"{a.get('date', '-')} - Cuba {tank.get('code', '?')} - {a.get('stage', '')}"
+                a_num = a.get("analysis_number") or a["id"]
+                analysis_options[a["id"]] = f"N {a_num} | {a.get('date', '-')} | Cuba {tank.get('code', '?')} | {a.get('stage', '')}"
 
             selected_analysis = st.selectbox(
                 "Ver detalle de analisis:",
