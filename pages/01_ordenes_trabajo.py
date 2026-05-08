@@ -366,12 +366,28 @@ with tab_crear:
                                     format_func=lambda x: dest_options[x],
                                     index=None, placeholder="Seleccione...", key="new_dst_tank")
 
+    if is_movement and dest_tank_id:
+        dst_c = content_by_tank.get(dest_tank_id, {})
+        dst_lts = int(dst_c.get("current_liters", 0) or 0)
+        dst_tk = next((tk for tk in ref["tanks"] if tk["id"] == dest_tank_id), {})
+        dst_cap = int(dst_tk.get("capacity_liters", 0) or 0)
+        dst_free = dst_cap - dst_lts if dst_cap > 0 else 0
+        if dst_cap > 0:
+            color_dst = "#059669" if dst_free > 0 else "#dc2626"
+            st.markdown(f"""
+            <div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;margin-bottom:8px;
+                        border:1px solid #bbf7d0;display:flex;justify-content:space-between;">
+                <span>Cuba destino: <strong>{dst_lts:,} L</strong> de {dst_cap:,} L</span>
+                <span style="color:{color_dst};font-weight:700;">Disponible: {dst_free:,} L</span>
+            </div>
+            """, unsafe_allow_html=True)
+
     with col_t3:
         if source_tank_id:
             src_content = content_by_tank.get(source_tank_id, {})
             max_liters = int(src_content.get("current_liters", 0) or 0)
             if max_liters > 0:
-                st.caption(f"Disponible en cuba: {max_liters:,} L")
+                st.caption(f"Disponible en origen: {max_liters:,} L")
         liters = st.number_input("Litros a traspasar" if is_movement else "Litros",
                                  value=0, min_value=0, step=100, key="new_liters")
     with col_t4:
@@ -510,6 +526,13 @@ with tab_crear:
             src_content = content_by_tank.get(source_tank_id, {}) if source_tank_id else {}
             src_liters = int(src_content.get("current_liters", 0) or 0)
             src_wine = src_content.get("wine_id")
+
+            dst_content = content_by_tank.get(dest_tank_id, {}) if dest_tank_id else {}
+            dst_liters = int(dst_content.get("current_liters", 0) or 0)
+            dst_tank_obj = next((tk for tk in ref["tanks"] if tk["id"] == dest_tank_id), {}) if dest_tank_id else {}
+            dst_capacity = int(dst_tank_obj.get("capacity_liters", 0) or 0)
+            dst_available = dst_capacity - dst_liters if dst_capacity > 0 else 0
+
             if not worker_id:
                 st.error("Debe asignar un operario")
             elif not source_tank_id:
@@ -524,6 +547,8 @@ with tab_crear:
                 st.error("La Cuba Inicial no contiene el vino seleccionado")
             elif liters > src_liters:
                 st.error(f"La Cuba Inicial solo tiene {src_liters:,} litros disponibles")
+            elif dst_capacity > 0 and liters > dst_available:
+                st.error(f"La Cuba Destino solo tiene {dst_available:,} L disponibles (capacidad {dst_capacity:,} L, actualmente {dst_liters:,} L)")
             elif is_blend and not blend_code:
                 st.error("Debe ingresar el codigo del nuevo vino para la mezcla")
             elif is_blend and not blend_grape_id:

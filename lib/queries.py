@@ -119,7 +119,7 @@ def get_work_orders_with_status(from_date: str):
 
 def get_work_orders_by_worker(worker_id: int):
     return (get_supabase_client().table("work_orders")
-            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code)")
+            .select("*, grape_varieties(code, name), workers(full_name), winemaking_processes(name), wines(code), product_lines(name)")
             .eq("worker_id", worker_id)
             .order("date", desc=True)
             .limit(50)
