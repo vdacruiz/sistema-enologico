@@ -80,7 +80,19 @@ with tab_nuevo:
         wine_options[key] = label
         wine_tank_map[key] = wt
 
-    col1, col2 = st.columns(2)
+    try:
+        next_num = queries.get_next_analysis_number()
+    except Exception:
+        next_num = "?"
+
+    col_num, col1, col2 = st.columns([1, 1.5, 1.5])
+    with col_num:
+        st.markdown(
+            f'<div style="background:#722F37;color:white;padding:12px 16px;border-radius:8px;'
+            f'text-align:center;margin-top:24px;">'
+            f'<small>ANALISIS N</small><br><strong style="font-size:1.5em;">{next_num}</strong></div>',
+            unsafe_allow_html=True,
+        )
     with col1:
         analysis_date = st.date_input("Fecha", value=date.today(), key="lab_date")
     with col2:
