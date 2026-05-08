@@ -422,6 +422,7 @@ with tab_ficha:
 
     ficha_wine_options = {}
     ficha_wine_data = {}
+    ficha_wine_tanks = {}
     for wt in ref["wines_in_tanks"]:
         wine = wt.get("wines") or {}
         grape = wt.get("grape_varieties") or {}
@@ -429,9 +430,17 @@ with tab_ficha:
         if not wine.get("id"):
             continue
         wid = wine["id"]
+        if wid not in ficha_wine_tanks:
+            ficha_wine_tanks[wid] = []
+        ficha_wine_tanks[wid].append(tank.get("code", "?"))
         if wid not in ficha_wine_options:
-            ficha_wine_options[wid] = f"{wine.get('code', '?')} | {grape.get('code', '')} | Cuba {tank.get('code', '?')}"
             ficha_wine_data[wid] = wt
+    for wid, tanks_list in ficha_wine_tanks.items():
+        wt = ficha_wine_data[wid]
+        wine = wt.get("wines") or {}
+        grape = wt.get("grape_varieties") or {}
+        cubas_txt = ", ".join(tanks_list)
+        ficha_wine_options[wid] = f"{wine.get('code', '?')} | {grape.get('code', '')} | Cubas: {cubas_txt}"
 
     ficha_wine_id = st.selectbox(
         "Seleccionar Vino:",

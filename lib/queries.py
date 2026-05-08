@@ -612,8 +612,6 @@ def get_wines_in_tanks():
                         "test_color_4, test_color_4_date, test_tartarica_neg4, test_tartarica_neg4_date, "
                         "fecha_ac, control_mensual_date, blend_notes, "
                         "tanks(id, code), wines(id, code), grape_varieties(code, name)")
-                .eq("status", "Ocupado")
-                .gt("current_liters", 0)
                 .not_.is_("wine_id", "null")
                 .order("tank_id")
                 .execute().data)
