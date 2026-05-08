@@ -374,6 +374,10 @@ def get_wines():
             .eq("is_active", True).order("code").execute().data)
 
 
+def create_wine(data: dict):
+    return get_supabase_client().table("wines").insert(data).execute().data
+
+
 # ============================================================
 # COMPRAS DE VINO
 # ============================================================

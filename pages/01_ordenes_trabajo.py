@@ -411,8 +411,42 @@ with tab_crear:
 
         st.button("+ Agregar Insumo", on_click=add_line, key="create_add_line")
 
+    is_blend = False
+    blend_wine_id = None
     if ot_type == "Movimiento de Vino":
         st.markdown("---")
+
+        if dest_tank_id and wine_id:
+            dest_content = content_by_tank.get(dest_tank_id, {})
+            dest_wine_id = dest_content.get("wine_id")
+            dest_wine_code = (dest_content.get("wines") or {}).get("code", "")
+            dest_liters = dest_content.get("current_liters", 0) or 0
+            dest_status = dest_content.get("status", "Vacio")
+
+            if dest_status != "Vacio" and dest_wine_id and dest_wine_id != wine_id:
+                is_blend = True
+                src_wine_code = wine_options.get(wine_id, "?")
+                st.warning(f"**Mezcla detectada:** {src_wine_code.split(' - ')[0]} + {dest_wine_code} ({dest_liters:,.0f} L en destino)")
+                st.markdown("Esta operacion requiere un nuevo codigo de vino para la mezcla resultante.")
+
+                col_b1, col_b2, col_b3 = st.columns(3)
+                with col_b1:
+                    blend_code = st.text_input("Codigo del nuevo vino", placeholder="Ej: 103-CS/MR 26/26-200",
+                                               key="blend_code")
+                with col_b2:
+                    grape_opts = {g["id"]: f"{g['code']} - {g['name']}" for g in ref["grape_varieties"]}
+                    blend_grape_id = st.selectbox("Cepa principal", options=list(grape_opts.keys()),
+                                                  format_func=lambda x: grape_opts[x],
+                                                  index=None, placeholder="Seleccione...", key="blend_grape")
+                with col_b3:
+                    line_opts = {l["id"]: l["name"] for l in ref["product_lines"]}
+                    blend_line_id = st.selectbox("Linea de producto", options=list(line_opts.keys()),
+                                                 format_func=lambda x: line_opts[x],
+                                                 index=None, placeholder="Seleccione...", key="blend_line")
+
+                blend_wine_type = st.selectbox("Tipo de vino", ["Tinto", "Blanco", "Rosado"],
+                                               key="blend_wine_type")
+
         ot_observations = st.text_area("Observaciones", key="new_ot_obs", placeholder="Notas sobre el movimiento...")
     else:
         ot_observations = None
@@ -473,7 +507,7 @@ with tab_crear:
                     st.error(f"Error: {e}")
 
         elif ot_type == "Movimiento de Vino":
-            src_content = content_by_tank.get(source_tank_id, {})
+            src_content = content_by_tank.get(source_tank_id, {}) if source_tank_id else {}
             src_liters = int(src_content.get("current_liters", 0) or 0)
             src_wine = src_content.get("wine_id")
             if not worker_id:
@@ -490,23 +524,48 @@ with tab_crear:
                 st.error("La Cuba Inicial no contiene el vino seleccionado")
             elif liters > src_liters:
                 st.error(f"La Cuba Inicial solo tiene {src_liters:,} litros disponibles")
+            elif is_blend and not blend_code:
+                st.error("Debe ingresar el codigo del nuevo vino para la mezcla")
+            elif is_blend and not blend_grape_id:
+                st.error("Debe seleccionar la cepa principal de la mezcla")
+            elif is_blend and not blend_line_id:
+                st.error("Debe seleccionar la linea de producto de la mezcla")
             else:
                 try:
+                    final_wine_id = wine_id
+                    final_grape_id = grape_id
+                    final_line_id = line_id
+
+                    if is_blend:
+                        new_wine = queries.create_wine({
+                            "code": blend_code,
+                            "grape_variety_id": blend_grape_id,
+                            "product_line_id": blend_line_id,
+                            "wine_type": blend_wine_type,
+                            "notes": f"Mezcla: {wine_options.get(wine_id, '?').split(' - ')[0]} + {dest_wine_code}",
+                            "is_active": True,
+                        })
+                        final_wine_id = new_wine[0]["id"]
+                        final_grape_id = blend_grape_id
+                        final_line_id = blend_line_id
+                        obs_blend = f"MEZCLA: {wine_options.get(wine_id, '?').split(' - ')[0]} + {dest_wine_code} → {blend_code}"
+                        ot_observations = f"{obs_blend}\n{ot_observations}" if ot_observations else obs_blend
+
                     wo_data = {
                         "ot_number": int(ot_number),
                         "date": str(ot_date),
                         "status": "Pendiente",
                         "priority": priority,
                         "ot_type": "Movimiento",
-                        "wine_id": wine_id,
+                        "wine_id": final_wine_id,
                         "source_tank_id": source_tank_id,
                         "dest_tank_id": dest_tank_id,
                         "liters": liters,
                     }
-                    if grape_id:
-                        wo_data["grape_variety_id"] = grape_id
-                    if line_id:
-                        wo_data["product_line_id"] = line_id
+                    if final_grape_id:
+                        wo_data["grape_variety_id"] = final_grape_id
+                    if final_line_id:
+                        wo_data["product_line_id"] = final_line_id
                     if process_id:
                         wo_data["process_id"] = process_id
                     if worker_id:
