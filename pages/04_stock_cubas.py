@@ -59,15 +59,17 @@ total = len(tank_data)
 ocupadas = sum(1 for t in tank_data if t["status"] == "Ocupado")
 vacias = sum(1 for t in tank_data if t["status"] == "Vacio")
 total_liters = sum(t["liters"] for t in tank_data)
-total_capacity = sum(t["capacity"] for t in tank_data)
-occupancy_pct = (total_liters / total_capacity * 100) if total_capacity > 0 else 0
+tanks_with_cap = [t for t in tank_data if t["capacity"] > 0]
+total_capacity = sum(t["capacity"] for t in tanks_with_cap)
+liters_with_cap = sum(t["liters"] for t in tanks_with_cap)
+occupancy_pct = (liters_with_cap / total_capacity * 100) if total_capacity > 0 else 0
 
 col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
 col_m1.metric("Total Cubas", total)
 col_m2.metric("Ocupadas", ocupadas)
 col_m3.metric("Vacias", vacias)
 col_m4.metric("Litros Totales", f"{total_liters:,.0f}")
-col_m5.metric("Ocupacion", f"{occupancy_pct:.1f}%")
+col_m5.metric("Capacidad Total", f"{total_capacity:,.0f}")
 
 # === FILTROS ===
 st.markdown("---")
