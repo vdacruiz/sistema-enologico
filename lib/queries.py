@@ -1,5 +1,10 @@
 import pandas as pd
+from datetime import datetime, timezone
 from lib.database import get_supabase_client
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ============================================================
@@ -129,9 +134,9 @@ def get_work_orders_by_worker(worker_id: int):
 def update_work_order_status(work_order_id: int, status: str, observations: str = None):
     data = {"status": status}
     if status == "En Proceso":
-        data["started_at"] = "now()"
+        data["started_at"] = _utcnow()
     elif status == "Completada":
-        data["completed_at"] = "now()"
+        data["completed_at"] = _utcnow()
     if observations:
         data["observations"] = observations
     return (get_supabase_client().table("work_orders")
@@ -154,7 +159,6 @@ def complete_movement_ot(ot: dict):
     if liters <= 0:
         return
 
-    # Obtener info completa del vino y de la cuba origen
     wine_data = {}
     if wine_id:
         wine_rec = client.table("wines").select("grape_variety_id, product_line_id, wine_type").eq("id", wine_id).execute().data
@@ -166,24 +170,60 @@ def complete_movement_ot(ot: dict):
         src_rows = client.table("tank_contents").select("*").eq("tank_id", src_id).execute().data
         if src_rows:
             src_data = src_rows[0]
-            new_liters = max(float(src_data.get("current_liters", 0)) - liters, 0)
-            update = {"current_liters": new_liters, "updated_at": "now()"}
-            if new_liters == 0:
-                update["status"] = "Vacio"
-                update["wine_id"] = None
-                update["grape_variety_id"] = None
-                update["product_line_id"] = None
-                update["wine_type"] = None
-                update["wine_state"] = None
-                update["apto_envasado"] = False
-                update["apto_envasado_at"] = None
-                update["apto_envasado_by"] = None
-                update["last_operation"] = "Vaciada por OT"
-            else:
-                update["last_operation"] = f"Traspaso salida {liters:.0f} L"
-            client.table("tank_contents").update(update).eq("id", src_data["id"]).execute()
+            src_liters = float(src_data.get("current_liters", 0))
+            if liters > src_liters:
+                raise ValueError(
+                    f"Cuba origen solo tiene {src_liters:.0f} L, se intentan mover {liters:.0f} L")
 
-    # Datos a copiar: prioridad vino > cuba origen
+    if dst_id:
+        tank_rec = client.table("tanks").select("capacity_liters").eq("id", dst_id).execute().data
+        dst_rows = client.table("tank_contents").select("*").eq("tank_id", dst_id).execute().data
+        dst_current = float(dst_rows[0].get("current_liters", 0)) if dst_rows else 0
+        capacity = float((tank_rec[0].get("capacity_liters") or 0)) if tank_rec else 0
+        if capacity > 0 and (dst_current + liters) > capacity:
+            raise ValueError(
+                f"Cuba destino capacidad {capacity:.0f} L, tiene {dst_current:.0f} L, "
+                f"no caben {liters:.0f} L mas")
+
+    if src_id and src_data:
+        new_liters = max(float(src_data.get("current_liters", 0)) - liters, 0)
+        update = {"current_liters": new_liters, "updated_at": _utcnow()}
+        if new_liters == 0:
+            update["status"] = "Vacio"
+            update["wine_id"] = None
+            update["grape_variety_id"] = None
+            update["product_line_id"] = None
+            update["wine_type"] = None
+            update["wine_state"] = None
+            update["apto_envasado"] = False
+            update["apto_envasado_at"] = None
+            update["apto_envasado_by"] = None
+            update["vintage_year"] = None
+            update["fml"] = None
+            update["last_analysis_date"] = None
+            update["alcohol_degree"] = None
+            update["ph"] = None
+            update["total_acidity"] = None
+            update["volatile_acidity"] = None
+            update["free_so2"] = None
+            update["total_so2"] = None
+            update["residual_sugar"] = None
+            update["so2_molecular"] = None
+            update["ntu"] = None
+            update["color"] = None
+            update["co2"] = None
+            update["test_color_4"] = False
+            update["test_color_4_date"] = None
+            update["test_tartarica_neg4"] = False
+            update["test_tartarica_neg4_date"] = None
+            update["fecha_ac"] = None
+            update["control_mensual_date"] = None
+            update["blend_notes"] = None
+            update["last_operation"] = "Vaciada por OT"
+        else:
+            update["last_operation"] = f"Traspaso salida {liters:.0f} L"
+        client.table("tank_contents").update(update).eq("id", src_data["id"]).execute()
+
     copy_fields = {
         "wine_id": wine_id,
         "grape_variety_id": wine_data.get("grape_variety_id") or src_data.get("grape_variety_id"),
@@ -193,6 +233,18 @@ def complete_movement_ot(ot: dict):
         "vintage_year": src_data.get("vintage_year"),
         "fml": src_data.get("fml"),
     }
+    lab_fields = [
+        "last_analysis_date", "alcohol_degree", "ph", "total_acidity",
+        "volatile_acidity", "free_so2", "total_so2", "residual_sugar",
+        "so2_molecular", "ntu", "color", "co2",
+        "test_color_4", "test_color_4_date", "test_tartarica_neg4",
+        "test_tartarica_neg4_date", "fecha_ac", "control_mensual_date", "blend_notes",
+    ]
+    lab_copy = {}
+    for f in lab_fields:
+        val = src_data.get(f)
+        if val is not None:
+            lab_copy[f] = val
 
     if dst_id:
         dst = client.table("tank_contents").select("*").eq("tank_id", dst_id).execute().data
@@ -203,10 +255,11 @@ def complete_movement_ot(ot: dict):
                 "current_liters": new_liters,
                 "status": "Ocupado",
                 "last_operation": f"Traspaso entrada {liters:.0f} L",
-                "updated_at": "now()",
+                "updated_at": _utcnow(),
             }
             if not dst.get("wine_id"):
                 update.update(copy_fields)
+                update.update(lab_copy)
             client.table("tank_contents").update(update).eq("id", dst["id"]).execute()
         else:
             insert = {
@@ -216,6 +269,7 @@ def complete_movement_ot(ot: dict):
                 "last_operation": f"Traspaso entrada {liters:.0f} L",
             }
             insert.update(copy_fields)
+            insert.update(lab_copy)
             client.table("tank_contents").insert(insert).execute()
 
     client.table("tank_movements").insert({
@@ -434,6 +488,47 @@ def get_lab_history_for_tank(tank_id: int, parameter_code: str = None):
     return results
 
 
+def get_lab_history_for_wine(wine_id: int):
+    analyses = (get_supabase_client().table("lab_analyses")
+                .select("id, date, tank_id, tanks(code)")
+                .eq("wine_id", wine_id)
+                .order("date")
+                .execute().data)
+    if not analyses:
+        return []
+    results = []
+    for a in analyses:
+        r = (get_supabase_client().table("lab_analysis_results")
+             .select("*, lab_parameters(code, name, unit, min_normal, max_normal, alert_value, critical_value)")
+             .eq("analysis_id", a["id"])
+             .execute().data)
+        tank = a.get("tanks") or {}
+        for item in r:
+            item["date"] = a["date"]
+            item["tank_code"] = tank.get("code", "-") if isinstance(tank, dict) else "-"
+        results.extend(r)
+    return results
+
+
+def get_wines_in_tanks():
+    client = get_supabase_client()
+    contents = (client.table("tank_contents")
+                .select("tank_id, wine_id, grape_variety_id, wine_type, current_liters, status, "
+                        "wine_state, apto_envasado, apto_envasado_at, apto_envasado_by, "
+                        "last_analysis_date, alcohol_degree, ph, total_acidity, volatile_acidity, "
+                        "free_so2, total_so2, residual_sugar, so2_molecular, ntu, color, co2, "
+                        "fml, vintage_year, "
+                        "test_color_4, test_color_4_date, test_tartarica_neg4, test_tartarica_neg4_date, "
+                        "fecha_ac, control_mensual_date, blend_notes, "
+                        "tanks(id, code), wines(id, code), grape_varieties(code, name)")
+                .eq("status", "Ocupado")
+                .gt("current_liters", 0)
+                .not_.is_("wine_id", "null")
+                .order("tank_id")
+                .execute().data)
+    return contents
+
+
 def get_latest_analysis_for_wine(wine_id: int):
     result = (get_supabase_client().table("lab_analyses")
               .select("id, date, tank_id, stage, analyst, notes, status, tanks(code)")
@@ -602,3 +697,71 @@ def get_po_supply_lines(po_id: int):
             .select("*, supplies(name, code, unit)")
             .eq("purchase_order_id", po_id)
             .execute().data)
+
+
+# ============================================================
+# BACKFILL / MANTENIMIENTO
+# ============================================================
+
+def backfill_analyses_wine_id():
+    client = get_supabase_client()
+    analyses = client.table("lab_analyses").select("id, tank_id").is_("wine_id", "null").not_.is_("tank_id", "null").execute().data
+    updated = 0
+    for a in analyses:
+        tc = client.table("tank_contents").select("wine_id").eq("tank_id", a["tank_id"]).execute().data
+        if tc and tc[0].get("wine_id"):
+            client.table("lab_analyses").update({"wine_id": tc[0]["wine_id"]}).eq("id", a["id"]).execute()
+            updated += 1
+    return updated
+
+
+# ============================================================
+# LOTES DE EMBOTELLADO
+# ============================================================
+
+def create_bottling_lot(data: dict):
+    return get_supabase_client().table("bottling_lots").insert(data).execute().data
+
+
+def get_bottling_lots(limit=50):
+    return (get_supabase_client().table("bottling_lots")
+            .select("*, wines(code), grape_varieties(code, name), product_lines(name), tanks(code)")
+            .order("bottling_date", desc=True)
+            .limit(limit)
+            .execute().data)
+
+
+def get_bottling_lot_by_number(lot_number: str):
+    result = (get_supabase_client().table("bottling_lots")
+              .select("*, wines(code, grape_variety_id, product_line_id, wine_type, notes), "
+                      "grape_varieties(code, name), product_lines(name), tanks(code)")
+              .eq("lot_number", lot_number)
+              .execute().data)
+    return result[0] if result else None
+
+
+def get_bottling_lots_by_wine(wine_id: int):
+    return (get_supabase_client().table("bottling_lots")
+            .select("*, tanks(code)")
+            .eq("wine_id", wine_id)
+            .order("bottling_date", desc=True)
+            .execute().data)
+
+
+def search_bottling_lots(search_term: str = None, from_date: str = None, to_date: str = None):
+    q = (get_supabase_client().table("bottling_lots")
+         .select("*, wines(code), grape_varieties(code, name), product_lines(name), tanks(code)")
+         .order("bottling_date", desc=True)
+         .limit(100))
+    if from_date:
+        q = q.gte("bottling_date", from_date)
+    if to_date:
+        q = q.lte("bottling_date", to_date)
+    results = q.execute().data
+    if search_term:
+        s = search_term.lower()
+        results = [r for r in results if
+                   s in r.get("lot_number", "").lower() or
+                   s in ((r.get("wines") or {}).get("code", "")).lower() or
+                   s in ((r.get("grape_varieties") or {}).get("code", "")).lower()]
+    return results

@@ -451,10 +451,13 @@ if inv_pages:
     pages["Inventario"] = inv_pages
 
 # Laboratorio
+lab_pages = []
 if has_permission("laboratorio", "ver"):
-    pages["Laboratorio"] = [
-        st.Page("pages/08_laboratorio.py", title="Analisis de Laboratorio", icon="🔬"),
-    ]
+    lab_pages.append(st.Page("pages/08_laboratorio.py", title="Analisis de Laboratorio", icon="🔬"))
+if has_permission("stock_cubas", "ver"):
+    lab_pages.append(st.Page("pages/12_embotellado.py", title="Embotellado y Lotes", icon="🍾"))
+if lab_pages:
+    pages["Laboratorio"] = lab_pages
 
 # Administracion
 admin_pages = []

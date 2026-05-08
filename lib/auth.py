@@ -14,8 +14,9 @@ def login(username: str, password: str):
         role = user.get("app_roles", {})
         if not role or not role.get("id"):
             return None
+        from datetime import datetime, timezone
         get_supabase_client().table("app_users").update(
-            {"last_login": "now()"}
+            {"last_login": datetime.now(timezone.utc).isoformat()}
         ).eq("id", user["id"]).execute()
         return {
             "id": user["id"],

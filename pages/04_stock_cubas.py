@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timezone
 from lib import queries
 from lib.auth import has_permission
 
@@ -232,7 +232,7 @@ if sel_id:
                     current = get_user()
                     queries.get_supabase_client().table("tank_contents").update({
                         "apto_envasado": True,
-                        "apto_envasado_at": datetime.now().isoformat(),
+                        "apto_envasado_at": datetime.now(timezone.utc).isoformat(),
                         "apto_envasado_by": current.get("full_name", "?"),
                     }).eq("id", t["content_id"]).execute()
                     st.success("Vino aprobado para envasado")
@@ -493,6 +493,16 @@ if sel_id:
             except Exception:
                 wine_analyses = []
 
+            try:
+                tank_analyses = queries.get_lab_analyses(tank_id=sel_id, limit=20)
+                existing_ids = {a["id"] for a in wine_analyses}
+                for a in tank_analyses:
+                    if a["id"] not in existing_ids:
+                        wine_analyses.append(a)
+                wine_analyses.sort(key=lambda x: x.get("date", ""), reverse=True)
+            except Exception:
+                pass
+
             if wine_analyses:
                 st.markdown(f"**Historial de Analisis de Laboratorio** ({len(wine_analyses)})")
                 an_rows = []
@@ -527,6 +537,27 @@ if sel_id:
                         "OT": wo.get("ot_number", "-") if isinstance(wo, dict) else "-",
                     })
                 st.dataframe(pd.DataFrame(mv_rows), use_container_width=True, hide_index=True)
+
+            # --- Lotes de embotellado del vino ---
+            try:
+                bottling_lots = queries.get_bottling_lots_by_wine(t["wine_id"])
+            except Exception:
+                bottling_lots = []
+
+            if bottling_lots:
+                st.markdown(f"**Lotes de Embotellado** ({len(bottling_lots)})")
+                bl_rows = []
+                for bl in bottling_lots:
+                    tank_bl = bl.get("tanks") or {}
+                    bl_rows.append({
+                        "Lote": bl.get("lot_number", "-"),
+                        "Fecha": bl.get("bottling_date", "-"),
+                        "Cuba": tank_bl.get("code", "-") if isinstance(tank_bl, dict) else "-",
+                        "Litros": bl.get("liters", "-"),
+                        "Botellas": bl.get("bottles_count", "-") or "-",
+                        "Formato": bl.get("bottle_format", "-") or "-",
+                    })
+                st.dataframe(pd.DataFrame(bl_rows), use_container_width=True, hide_index=True)
 
             if st.button("Cerrar Trazabilidad", key="btn_close_trace"):
                 del st.session_state["show_trace"]

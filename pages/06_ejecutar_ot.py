@@ -265,14 +265,16 @@ if en_proceso:
                                 update_data["planned_quantity"] = ul["planned_quantity"]
                             queries.update_work_order_line(ul["line_id"], update_data)
 
-                        queries.update_work_order_status(ot["id"], "Completada", obs)
-
                         if ot_type == "Movimiento":
                             queries.complete_movement_ot(ot)
+
+                        queries.update_work_order_status(ot["id"], "Completada", obs)
 
                         st.success(f"OT #{ot_num} completada exitosamente")
                         st.cache_data.clear()
                         st.rerun()
+                    except ValueError as ve:
+                        st.error(f"Error de validacion: {ve}")
                     except Exception as e:
                         st.error(f"Error: {e}")
 

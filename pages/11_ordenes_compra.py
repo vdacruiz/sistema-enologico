@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime, timezone
 from lib import queries
 from lib.auth import require_permission, has_permission, get_current_user
 from lib.pdf_generator import generate_oc_pdf
@@ -408,7 +408,7 @@ with tab_aprobar:
                             queries.update_purchase_order(oc["id"], {
                                 "status": "Aprobada Enologia",
                                 "approved_by_enology": user["id"],
-                                "approved_by_enology_at": "now()",
+                                "approved_by_enology_at": datetime.now(timezone.utc).isoformat(),
                             })
                             st.success(f"{oc_label} aprobada por Enologia")
                             st.cache_data.clear()
@@ -421,7 +421,7 @@ with tab_aprobar:
                             queries.update_purchase_order(oc["id"], {
                                 "status": "Aprobada",
                                 "approved_by_admin": user["id"],
-                                "approved_by_admin_at": "now()",
+                                "approved_by_admin_at": datetime.now(timezone.utc).isoformat(),
                             })
                             st.success(f"{oc_label} aprobada con V°B°")
                             st.cache_data.clear()
@@ -441,7 +441,7 @@ with tab_aprobar:
                                 queries.update_purchase_order(oc["id"], {
                                     "status": "Rechazada",
                                     "rejected_by": user["id"],
-                                    "rejected_at": "now()",
+                                    "rejected_at": datetime.now(timezone.utc).isoformat(),
                                     "rejection_notes": rej_notes,
                                 })
                                 st.success(f"{oc_label} rechazada")
