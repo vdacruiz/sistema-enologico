@@ -399,6 +399,10 @@ if not st.session_state.user:
         """, unsafe_allow_html=True)
     st.stop()
 
+# --- Heartbeat de sesion ---
+from lib.auth import heartbeat
+heartbeat()
+
 # --- Sidebar con logo e info de usuario ---
 user = get_current_user()
 with st.sidebar:

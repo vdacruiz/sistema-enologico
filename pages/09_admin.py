@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+from datetime import datetime, timezone
 from lib import auth, queries
 
 st.title("Administracion de Usuarios")
@@ -23,7 +24,7 @@ MODULES = {
 
 ACTIONS = ["ver", "crear", "editar", "eliminar", "ejecutar", "aprobar_enologia", "aprobar_admin"]
 
-tab_users, tab_roles = st.tabs(["Usuarios", "Roles y Permisos"])
+tab_users, tab_roles, tab_sessions = st.tabs(["Usuarios", "Roles y Permisos", "Sesiones"])
 
 # =============================================================
 # TAB: Usuarios
@@ -281,3 +282,123 @@ with tab_roles:
                     st.error("Ya existe un rol con ese nombre")
                 else:
                     st.error(f"Error: {e}")
+
+
+# =============================================================
+# TAB: Sesiones
+# =============================================================
+with tab_sessions:
+    st.subheader("Historial de Sesiones")
+
+    try:
+        sessions = auth.get_user_sessions(limit=200)
+    except Exception as e:
+        st.error(f"Error al cargar sesiones: {e}")
+        sessions = []
+
+    if not sessions:
+        st.info("No hay sesiones registradas aun")
+    else:
+        now = datetime.now(timezone.utc)
+
+        user_filter = st.selectbox(
+            "Filtrar por usuario",
+            options=["Todos"] + sorted({s["app_users"]["full_name"] for s in sessions if s.get("app_users")}),
+            key="session_user_filter",
+        )
+
+        filtered = sessions
+        if user_filter != "Todos":
+            filtered = [s for s in sessions if s.get("app_users", {}).get("full_name") == user_filter]
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        active_count = sum(1 for s in filtered if not s.get("logout_at"))
+        with col_m1:
+            st.metric("Total sesiones", len(filtered))
+        with col_m2:
+            st.metric("Sesiones activas", active_count)
+        with col_m3:
+            unique_users = len({s.get("user_id") for s in filtered})
+            st.metric("Usuarios unicos", unique_users)
+
+        def _parse_dt(val):
+            if not val:
+                return None
+            try:
+                return datetime.fromisoformat(val.replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+        def _fmt_duration(td):
+            total_min = int(td.total_seconds() // 60)
+            hours, mins = divmod(total_min, 60)
+            return f"{hours}h {mins}m" if hours else f"{mins}m"
+
+        def _short_device(ua):
+            if not ua:
+                return "-"
+            ua_lower = ua.lower()
+            if "iphone" in ua_lower:
+                device = "iPhone"
+            elif "ipad" in ua_lower:
+                device = "iPad"
+            elif "android" in ua_lower:
+                device = "Android"
+            elif "macintosh" in ua_lower or "mac os" in ua_lower:
+                device = "Mac"
+            elif "windows" in ua_lower:
+                device = "Windows"
+            elif "linux" in ua_lower:
+                device = "Linux"
+            else:
+                device = "Otro"
+            if "chrome" in ua_lower and "edg" not in ua_lower:
+                browser = "Chrome"
+            elif "edg" in ua_lower:
+                browser = "Edge"
+            elif "firefox" in ua_lower:
+                browser = "Firefox"
+            elif "safari" in ua_lower:
+                browser = "Safari"
+            else:
+                browser = ""
+            return f"{device}/{browser}" if browser else device
+
+        rows = []
+        for s in filtered:
+            user_info = s.get("app_users", {})
+            login_dt = _parse_dt(s.get("login_at"))
+            logout_dt = _parse_dt(s.get("logout_at"))
+            activity_dt = _parse_dt(s.get("last_activity_at"))
+
+            login_str = login_dt.strftime("%d/%m/%Y %H:%M") if login_dt else "-"
+
+            if logout_dt:
+                logout_str = logout_dt.strftime("%d/%m/%Y %H:%M")
+                end_dt = logout_dt
+                cierre_tipo = "Manual"
+            elif activity_dt and login_dt and (now - activity_dt).total_seconds() > 600:
+                logout_str = activity_dt.strftime("%d/%m/%Y %H:%M")
+                end_dt = activity_dt
+                cierre_tipo = "Inactivo"
+            else:
+                logout_str = "Activa"
+                end_dt = now
+                cierre_tipo = "Activa"
+
+            duration = _fmt_duration(end_dt - login_dt) if login_dt else "-"
+            if cierre_tipo == "Activa" and duration != "-":
+                duration = f"~{duration}"
+
+            rows.append({
+                "Usuario": user_info.get("full_name", "-"),
+                "Login": user_info.get("username", "-"),
+                "Inicio": login_str,
+                "Cierre": logout_str,
+                "Tipo cierre": cierre_tipo,
+                "Duracion": duration,
+                "IP": s.get("ip_address") or "-",
+                "Dispositivo": _short_device(s.get("user_agent")),
+            })
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
